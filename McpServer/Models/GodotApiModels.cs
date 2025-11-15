@@ -379,3 +379,159 @@ public class ScriptExecutionResult
     [JsonPropertyName("error")]
     public string? Error { get; set; }
 }
+
+// ========== 简化场景树请求 ==========
+
+/// <summary>
+/// 简化场景树请求
+/// </summary>
+public class SimpleTreeRequest
+{
+    [JsonPropertyName("rootPath")]
+    public string RootPath { get; set; } = "/root";
+    
+    [JsonPropertyName("maxDepth")]
+    public int MaxDepth { get; set; } = 3;
+}
+
+// ========== 信号系统请求 ==========
+
+/// <summary>
+/// 信号连接请求
+/// </summary>
+public class SignalConnectionRequest
+{
+    [JsonPropertyName("sourceNodePath")]
+    public string SourceNodePath { get; set; } = string.Empty;
+    
+    [JsonPropertyName("signalName")]
+    public string SignalName { get; set; } = string.Empty;
+    
+    [JsonPropertyName("targetNodePath")]
+    public string? TargetNodePath { get; set; }
+    
+    [JsonPropertyName("targetMethod")]
+    public string? TargetMethod { get; set; }
+}
+
+/// <summary>
+/// 信号发射请求
+/// </summary>
+public class SignalEmitRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = string.Empty;
+    
+    [JsonPropertyName("signalName")]
+    public string SignalName { get; set; } = string.Empty;
+    
+    [JsonPropertyName("args")]
+    public List<object>? Args { get; set; }
+}
+
+/// <summary>
+/// 信号监听请求
+/// </summary>
+public class SignalMonitorRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string? NodePath { get; set; }
+    
+    [JsonPropertyName("signalName")]
+    public string? SignalName { get; set; }
+    
+    [JsonPropertyName("maxEvents")]
+    public int MaxEvents { get; set; } = 1000;
+}
+
+/// <summary>
+/// 信号事件查询请求
+/// </summary>
+public class SignalEventQueryRequest
+{
+    [JsonPropertyName("count")]
+    public int Count { get; set; } = 50;
+    
+    [JsonPropertyName("nodePath")]
+    public string? NodePath { get; set; }
+    
+    [JsonPropertyName("signalName")]
+    public string? SignalName { get; set; }
+    
+    [JsonPropertyName("startTime")]
+    public long? StartTime { get; set; }
+    
+    [JsonPropertyName("endTime")]
+    public long? EndTime { get; set; }
+}
+
+public class SignalEvent
+{
+    [JsonPropertyName("timestamp")]
+    public DateTime Timestamp { get; set; }
+    
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = "";
+    
+    [JsonPropertyName("nodeType")]
+    public string NodeType { get; set; } = "";
+    
+    [JsonPropertyName("signalName")]
+    public string SignalName { get; set; } = "";
+    
+    [JsonPropertyName("args")]
+    public List<string> Args { get; set; } = new();
+}
+
+// ========== 日志系统请求 ==========
+
+/// <summary>
+/// 日志过滤请求
+/// </summary>
+public class LogFilterRequest
+{
+    [JsonPropertyName("level")]
+    public string? Level { get; set; }
+    
+    [JsonPropertyName("messagePattern")]
+    public string? MessagePattern { get; set; }
+    
+    [JsonPropertyName("startTime")]
+    public long? StartTime { get; set; }
+    
+    [JsonPropertyName("endTime")]
+    public long? EndTime { get; set; }
+    
+    [JsonPropertyName("maxCount")]
+    public int MaxCount { get; set; } = 100;
+}
+
+/// <summary>
+/// 日志导出请求
+/// </summary>
+public class LogExportRequest
+{
+    [JsonPropertyName("filePath")]
+    public string? FilePath { get; set; }
+}
+
+/// <summary>
+/// 自定义日志请求
+/// </summary>
+public class CustomLogRequest
+{
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = string.Empty;
+    
+    [JsonPropertyName("level")]
+    public string Level { get; set; } = "info";
+}
+
+/// <summary>
+/// 日志计数请求
+/// </summary>
+public class LogCountRequest
+{
+    [JsonPropertyName("count")]
+    public int Count { get; set; } = 50;
+}

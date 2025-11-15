@@ -275,6 +275,150 @@ public class GodotClient : IDisposable
             }));
     }
 
+    // ========== 简化场景树 ==========
+
+    public async Task<string> GetSceneTreeSimpleAsync(string rootPath = "/root", int maxDepth = 3)
+    {
+        return await ExecuteAsync("GetSceneTreeSimple", async () => 
+            await _godotApi.GetSceneTreeSimpleAsync(new SimpleTreeRequest 
+            { 
+                RootPath = rootPath,
+                MaxDepth = maxDepth
+            }));
+    }
+
+    // ========== 信号系统 ==========
+
+    public async Task<string> GetNodeSignalsAsync(string nodePath)
+    {
+        return await ExecuteAsync("GetNodeSignals", async () => 
+            await _godotApi.GetNodeSignalsAsync(new NodePathRequest { NodePath = nodePath }));
+    }
+
+    public async Task<string> GetSignalConnectionsAsync(string nodePath, string signalName)
+    {
+        return await ExecuteAsync("GetSignalConnections", async () => 
+            await _godotApi.GetSignalConnectionsAsync(new SignalConnectionRequest 
+            { 
+                SourceNodePath = nodePath,
+                SignalName = signalName
+            }));
+    }
+
+    public async Task<string> ConnectSignalAsync(string sourceNodePath, string signalName, string targetNodePath, string targetMethod)
+    {
+        return await ExecuteAsync("ConnectSignal", async () => 
+            await _godotApi.ConnectSignalAsync(new SignalConnectionRequest 
+            { 
+                SourceNodePath = sourceNodePath,
+                SignalName = signalName,
+                TargetNodePath = targetNodePath,
+                TargetMethod = targetMethod
+            }));
+    }
+
+    public async Task<string> DisconnectSignalAsync(string sourceNodePath, string signalName, string targetNodePath, string targetMethod)
+    {
+        return await ExecuteAsync("DisconnectSignal", async () => 
+            await _godotApi.DisconnectSignalAsync(new SignalConnectionRequest 
+            { 
+                SourceNodePath = sourceNodePath,
+                SignalName = signalName,
+                TargetNodePath = targetNodePath,
+                TargetMethod = targetMethod
+            }));
+    }
+
+    public async Task<string> EmitSignalAsync(string nodePath, string signalName, List<object>? args = null)
+    {
+        return await ExecuteAsync("EmitSignal", async () => 
+            await _godotApi.EmitSignalAsync(new SignalEmitRequest 
+            { 
+                NodePath = nodePath,
+                SignalName = signalName,
+                Args = args
+            }));
+    }
+
+    public async Task<string> StartSignalMonitoringAsync(string? nodePath = null, string? signalName = null, int maxEvents = 1000)
+    {
+        return await ExecuteAsync("StartSignalMonitoring", async () => 
+            await _godotApi.StartSignalMonitoringAsync(new SignalMonitorRequest 
+            { 
+                NodePath = nodePath,
+                SignalName = signalName,
+                MaxEvents = maxEvents
+            }));
+    }
+
+    public async Task<string> StopSignalMonitoringAsync()
+    {
+        return await ExecuteAsync("StopSignalMonitoring", async () => 
+            await _godotApi.StopSignalMonitoringAsync());
+    }
+
+    public async Task<string> GetSignalEventsAsync(int count = 50, string? nodePath = null, string? signalName = null, long? startTime = null, long? endTime = null)
+    {
+        return await ExecuteAsync("GetSignalEvents", async () => 
+            await _godotApi.GetSignalEventsAsync(new SignalEventQueryRequest 
+            { 
+                Count = count,
+                NodePath = nodePath,
+                SignalName = signalName,
+                StartTime = startTime,
+                EndTime = endTime
+            }));
+    }
+
+    public async Task<string> ClearSignalEventsAsync()
+    {
+        return await ExecuteAsync("ClearSignalEvents", async () => 
+            await _godotApi.ClearSignalEventsAsync());
+    }
+
+    // ========== 增强日志系统 ==========
+
+    public async Task<string> GetLogsFilteredAsync(string? level = null, string? messagePattern = null, long? startTime = null, long? endTime = null, int maxCount = 100)
+    {
+        return await ExecuteAsync("GetLogsFiltered", async () => 
+            await _godotApi.GetLogsFilteredAsync(new LogFilterRequest 
+            { 
+                Level = level,
+                MessagePattern = messagePattern,
+                StartTime = startTime,
+                EndTime = endTime,
+                MaxCount = maxCount
+            }));
+    }
+
+    public async Task<string> GetLogStatsAsync()
+    {
+        return await ExecuteAsync("GetLogStats", async () => 
+            await _godotApi.GetLogStatsAsync());
+    }
+
+    public async Task<string> ExportLogsAsync(string? filePath = null)
+    {
+        return await ExecuteAsync("ExportLogs", async () => 
+            await _godotApi.ExportLogsAsync(new LogExportRequest { FilePath = filePath }));
+    }
+
+    public async Task<string> ClearLogsAsync()
+    {
+        return await ExecuteAsync("ClearLogs", async () => 
+            await _godotApi.ClearLogsAsync());
+    }
+
+    public async Task<string> AddCustomLogAsync(string message, string level = "info")
+    {
+        return await ExecuteAsync("AddCustomLog", async () => 
+            await _godotApi.AddCustomLogAsync(new CustomLogRequest 
+            { 
+                Message = message,
+                Level = level
+            }));
+    }
+
     // ========== 内部辅助方法 ==========
 
     /// <summary>

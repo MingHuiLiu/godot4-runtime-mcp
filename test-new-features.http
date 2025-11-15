@@ -1,0 +1,304 @@
+### Godot MCP 新功能测试 - 简化场景树 + 信号系统 + 增强日志
+@base_url = http://127.0.0.1:7777
+
+# ========== 简化场景树 ==========
+
+### 1. 获取简化场景树 (默认参数)
+POST {{base_url}}/get_scene_tree_simple
+Content-Type: application/json
+
+{
+  "rootPath": "/root",
+  "maxDepth": 3
+}
+
+### 2. 获取简化场景树 (浅层)
+POST {{base_url}}/get_scene_tree_simple
+Content-Type: application/json
+
+{
+  "rootPath": "/root",
+  "maxDepth": 1
+}
+
+### 3. 获取特定节点的简化树
+POST {{base_url}}/get_scene_tree_simple
+Content-Type: application/json
+
+{
+  "rootPath": "/root/Main",
+  "maxDepth": 2
+}
+
+# ========== 信号系统 ==========
+
+### 4. 获取节点的所有信号
+POST {{base_url}}/get_node_signals
+Content-Type: application/json
+
+{
+  "nodePath": "/root/Main"
+}
+
+### 5. 获取信号的连接信息
+POST {{base_url}}/get_signal_connections
+Content-Type: application/json
+
+{
+  "sourceNodePath": "/root/Main",
+  "signalName": "tree_entered"
+}
+
+### 6. 连接信号
+POST {{base_url}}/connect_signal
+Content-Type: application/json
+
+{
+  "sourceNodePath": "/root/Main",
+  "signalName": "tree_entered",
+  "targetNodePath": "/root/McpClient",
+  "targetMethod": "OnMainEntered"
+}
+
+### 7. 断开信号
+POST {{base_url}}/disconnect_signal
+Content-Type: application/json
+
+{
+  "sourceNodePath": "/root/Main",
+  "signalName": "tree_entered",
+  "targetNodePath": "/root/McpClient",
+  "targetMethod": "OnMainEntered"
+}
+
+### 8. 发射自定义信号
+POST {{base_url}}/emit_signal
+Content-Type: application/json
+
+{
+  "nodePath": "/root/Main",
+  "signalName": "ready",
+  "args": null
+}
+
+### 9. 开启信号监听 (监听所有信号)
+POST {{base_url}}/start_signal_monitoring
+Content-Type: application/json
+
+{
+  "nodePath": null,
+  "signalName": null,
+  "maxEvents": 5000
+}
+
+### 10. 设置信号过滤器 (仅监听特定信号)
+POST {{base_url}}/start_signal_monitoring
+Content-Type: application/json
+
+{
+  "nodePath": null,
+  "signalName": "ready",
+  "maxEvents": 5000
+}
+
+### 11. 获取最近的信号事件
+POST {{base_url}}/get_signal_events
+Content-Type: application/json
+
+{
+  "count": 50,
+  "nodePath": null,
+  "signalName": null,
+  "startTime": null,
+  "endTime": null
+}
+
+### 12. 按节点过滤信号事件 (部分匹配)
+POST {{base_url}}/get_signal_events
+Content-Type: application/json
+
+{
+  "count": 20,
+  "nodePath": "Main",
+  "signalName": null,
+  "startTime": null,
+  "endTime": null
+}
+
+### 13. 按信号名称过滤
+POST {{base_url}}/get_signal_events
+Content-Type: application/json
+
+{
+  "count": 20,
+  "nodePath": null,
+  "signalName": "ready",
+  "startTime": null,
+  "endTime": null
+}
+
+### 14. 按时间范围查询信号事件 (Unix 时间戳)
+# 例如: 查询最近 1 小时的信号
+POST {{base_url}}/get_signal_events
+Content-Type: application/json
+
+{
+  "count": 100,
+  "nodePath": null,
+  "signalName": null,
+  "startTime": 1735689600,
+  "endTime": 1735693200
+}
+
+### 15. 组合查询: 特定节点 + 特定信号 + 时间范围
+POST {{base_url}}/get_signal_events
+Content-Type: application/json
+
+{
+  "count": 50,
+  "nodePath": "Player",
+  "signalName": "health_changed",
+  "startTime": 1735689600,
+  "endTime": 1735693200
+}
+
+### 16. 查看信号监听统计
+POST {{base_url}}/stop_signal_monitoring
+Content-Type: application/json
+
+{}
+
+### 14. 清空信号事件记录
+POST {{base_url}}/clear_signal_events
+Content-Type: application/json
+
+{}
+
+# ========== 增强日志系统 ==========
+
+### 15. 添加自定义日志 (info)
+POST {{base_url}}/add_custom_log
+Content-Type: application/json
+
+{
+  "message": "这是一条测试日志",
+  "level": "info"
+}
+
+### 16. 添加自定义日志 (warning)
+POST {{base_url}}/add_custom_log
+Content-Type: application/json
+
+{
+  "message": "警告: 内存使用过高",
+  "level": "warning"
+}
+
+### 17. 添加自定义日志 (error)
+POST {{base_url}}/add_custom_log
+Content-Type: application/json
+
+{
+  "message": "错误: 加载资源失败",
+  "level": "error"
+}
+
+### 18. 获取最近的日志
+POST {{base_url}}/get_logs
+Content-Type: application/json
+
+{
+  "count": 50
+}
+
+### 19. 获取过滤后的日志 (按级别)
+POST {{base_url}}/get_logs_filtered
+Content-Type: application/json
+
+{
+  "level": "error",
+  "messagePattern": null,
+  "startTime": null,
+  "endTime": null,
+  "maxCount": 100
+}
+
+### 20. 获取过滤后的日志 (按消息内容)
+POST {{base_url}}/get_logs_filtered
+Content-Type: application/json
+
+{
+  "level": null,
+  "messagePattern": "内存",
+  "startTime": null,
+  "endTime": null,
+  "maxCount": 50
+}
+
+### 21. 获取过滤后的日志 (按时间范围)
+POST {{base_url}}/get_logs_filtered
+Content-Type: application/json
+
+{
+  "level": null,
+  "messagePattern": null,
+  "startTime": 1704067200,
+  "endTime": 1735689600,
+  "maxCount": 100
+}
+
+### 22. 获取日志统计信息
+POST {{base_url}}/get_log_stats
+Content-Type: application/json
+
+{}
+
+### 23. 导出日志到文件 (默认路径)
+POST {{base_url}}/export_logs
+Content-Type: application/json
+
+{
+  "filePath": null
+}
+
+### 24. 导出日志到自定义路径
+POST {{base_url}}/export_logs
+Content-Type: application/json
+
+{
+  "filePath": "user://my_debug_logs.txt"
+}
+
+### 25. 清空日志
+POST {{base_url}}/clear_logs
+Content-Type: application/json
+
+{}
+
+# ========== 综合测试场景 ==========
+
+### 场景 1: 调试信号连接问题
+# 步骤:
+# 1. 获取节点信号列表
+# 2. 查看信号连接情况
+# 3. 开始监听信号
+# 4. 触发游戏操作
+# 5. 查看信号事件记录
+# 6. 分析日志
+
+### 场景 2: 性能分析
+# 步骤:
+# 1. 获取简化场景树 (快速浏览结构)
+# 2. 添加性能标记日志
+# 3. 运行游戏
+# 4. 查看日志统计
+# 5. 导出日志分析
+
+### 场景 3: 实时调试
+# 步骤:
+# 1. 开始信号监听
+# 2. 添加调试日志标记
+# 3. 执行游戏操作
+# 4. 查看信号事件
+# 5. 过滤查看相关日志
+# 6. 分析问题

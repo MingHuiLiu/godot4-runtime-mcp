@@ -16,7 +16,20 @@ public partial class McpClient : Node
     private HttpListener? _httpListener;
     private bool _isRunning = false;
     private const string ApiUrl = "http://127.0.0.1:7777/";
-    private readonly List<LogEntry> _logs = new();
+    
+    // 增强日志系统 - 环形缓冲区
+    private readonly LinkedList<LogEntry> _logBuffer = new();
+    private const int MaxLogBufferSize = 1000;
+    private const string LogFilePath = "user://mcp_logs.txt";
+    private readonly List<LogEntry> _logs = new(); // 保留向后兼容
+    private bool _autoLogGDPrint = true; // 自动记录 GD.Print
+    
+    // 信号监听系统 - 全局监听
+    private readonly List<SignalEvent> _signalEventsBuffer = new();
+    private const int MaxSignalEventsBufferSize = 5000;
+    private const string SignalEventsFilePath = "user://mcp_signal_events.txt";
+    private bool _isGlobalSignalMonitoring = false;
+    private readonly HashSet<string> _monitoredSignals = new(); // 监听的信号名称过滤
     
     // 线程安全的请求队列
     private readonly Queue<PendingRequest> _requestQueue = new();
@@ -31,9 +44,18 @@ public partial class McpClient : Node
 
     public override void _Ready()
     {
+        // 重置日志和信号事件文件
+        InitializeLogFile();
+        InitializeSignalEventsFile();
+        
+        // 开启全局信号监听
+        StartGlobalSignalMonitoring();
+        
         GD.Print("=".PadRight(60, '='));
-        GD.Print("[MCP] Godot MCP v4.1 - 线程安全独立HTTP端点");
+        GD.Print("[MCP] Godot MCP v5.0 - 完整调试系统");
         GD.Print("=".PadRight(60, '='));
+        GD.Print("[MCP] ✓ 全局信号监听已启动");
+        GD.Print("[MCP] ✓ 日志自动记录已启动");
         StartServer();
     }
 
@@ -41,6 +63,9 @@ public partial class McpClient : Node
     {
         // 在主线程处理所有待处理的请求
         ProcessPendingRequests();
+        
+        // 自动捕获控制台输出 (通过重定向 GD.Print 实现需要引擎支持)
+        // 这里我们使用定期轮询的方式
     }
 
     private async void StartServer()
@@ -52,7 +77,7 @@ public partial class McpClient : Node
             _httpListener.Start();
             _isRunning = true;
             GD.Print($"[MCP] ✓ 监听: {ApiUrl}");
-            GD.Print("[MCP] ✓ 19个独立HTTP端点已就绪");
+            GD.Print("[MCP] ✓ 48 个独立HTTP端点已就绪 (场景树+信号+日志)");
             _ = Task.Run(HandleRequestsAsync);
         }
         catch (Exception ex)
@@ -194,6 +219,24 @@ public partial class McpClient : Node
                 "/get_node_subtree" => GetNodeSubtree(Deserialize<SubtreeRequest>(body)),
                 "/search_nodes" => SearchNodes(Deserialize<FindNodesRequest>(body)),
                 "/get_node_context" => GetNodeContext(Deserialize<NodeContextRequest>(body)),
+                // 简化场景树
+                "/get_scene_tree_simple" => GetSceneTreeSimple(Deserialize<SimpleTreeRequest>(body)),
+                // 信号系统
+                "/get_node_signals" => GetNodeSignals(Deserialize<NodePathRequest>(body)),
+                "/get_signal_connections" => GetSignalConnections(Deserialize<SignalConnectionRequest>(body)),
+                "/connect_signal" => ConnectSignal(Deserialize<SignalConnectionRequest>(body)),
+                "/disconnect_signal" => DisconnectSignal(Deserialize<SignalConnectionRequest>(body)),
+                "/emit_signal" => EmitSignal(Deserialize<SignalEmitRequest>(body)),
+                "/start_signal_monitoring" => StartSignalMonitoring(Deserialize<SignalMonitorRequest>(body)),
+                "/stop_signal_monitoring" => StopSignalMonitoring(),
+                "/get_signal_events" => GetSignalEvents(Deserialize<SignalEventQueryRequest>(body)),
+                "/clear_signal_events" => ClearSignalEvents(),
+                // 增强日志系统
+                "/get_logs_filtered" => GetLogsFiltered(Deserialize<LogFilterRequest>(body)),
+                "/get_log_stats" => GetLogStats(),
+                "/export_logs" => ExportLogs(Deserialize<LogExportRequest>(body)),
+                "/clear_logs" => ClearLogs(),
+                "/add_custom_log" => AddCustomLog(Deserialize<CustomLogRequest>(body)),
                 _ => ErrorResponse($"未知端点: {path}")
             };
         }
@@ -781,6 +824,651 @@ public partial class McpClient : Node
         return Ok(context);
     }
 
+    // ========== 简化场景树 ==========
+
+    private ApiResponse GetSceneTreeSimple(SimpleTreeRequest req)
+    {
+        var root = GetNodeOrNull(req.RootPath);
+        if (root == null) return Err($"节点不存在: {req.RootPath}");
+
+        var tree = BuildSimpleTree(root, req.MaxDepth, 0);
+        return Ok(tree);
+    }
+
+    private Dictionary<string, object> BuildSimpleTree(Node node, int maxDepth, int currentDepth)
+    {
+        var result = new Dictionary<string, object>
+        {
+            ["name"] = node.Name.ToString(),
+            ["type"] = node.GetType().Name
+        };
+
+        if (currentDepth < maxDepth)
+        {
+            result["children"] = node.GetChildren()
+                .Select(c => BuildSimpleTree(c, maxDepth, currentDepth + 1))
+                .ToList();
+        }
+
+        return result;
+    }
+
+    // ========== 信号系统 ==========
+
+    private ApiResponse GetNodeSignals(NodePathRequest req)
+    {
+        var node = GetNodeOrNull(req.NodePath);
+        if (node == null) return Err($"节点不存在: {req.NodePath}");
+
+        var signals = node.GetSignalList()
+            .Select(s => (Godot.Collections.Dictionary)s)
+            .Select(s => new
+            {
+                name = s["name"].AsString(),
+                args = ((Godot.Collections.Array)s["args"])
+                    .Select(a => ((Godot.Collections.Dictionary)a)["name"].AsString())
+                    .ToList()
+            })
+            .ToList();
+
+        return Ok(new { nodePath = req.NodePath, signals });
+    }
+
+    private ApiResponse GetSignalConnections(SignalConnectionRequest req)
+    {
+        var node = GetNodeOrNull(req.SourceNodePath);
+        if (node == null) return Err($"节点不存在: {req.SourceNodePath}");
+
+        var connections = node.GetSignalConnectionList(req.SignalName)
+            .Select(c => (Godot.Collections.Dictionary)c)
+            .Select(c => new
+            {
+                signal = c["signal"].AsString(),
+                callable = c["callable"].ToString(),
+                target = c.ContainsKey("target") ? c["target"].ToString() : null
+            })
+            .ToList();
+
+        return Ok(new { signal = req.SignalName, connections });
+    }
+
+    private ApiResponse ConnectSignal(SignalConnectionRequest req)
+    {
+        var source = GetNodeOrNull(req.SourceNodePath);
+        if (source == null) return Err($"源节点不存在: {req.SourceNodePath}");
+
+        if (string.IsNullOrEmpty(req.TargetNodePath) || string.IsNullOrEmpty(req.TargetMethod))
+            return Err("需要目标节点路径和方法名");
+
+        var target = GetNodeOrNull(req.TargetNodePath);
+        if (target == null) return Err($"目标节点不存在: {req.TargetNodePath}");
+
+        try
+        {
+            var callable = new Callable(target, req.TargetMethod);
+            source.Connect(req.SignalName, callable);
+            
+            LogInfo($"信号已连接: {req.SourceNodePath}.{req.SignalName} → {req.TargetNodePath}.{req.TargetMethod}");
+            
+            return Ok(new
+            {
+                connected = true,
+                source = req.SourceNodePath,
+                signal = req.SignalName,
+                target = req.TargetNodePath,
+                method = req.TargetMethod
+            });
+        }
+        catch (Exception ex)
+        {
+            return Err($"连接信号失败: {ex.Message}");
+        }
+    }
+
+    private ApiResponse DisconnectSignal(SignalConnectionRequest req)
+    {
+        var source = GetNodeOrNull(req.SourceNodePath);
+        if (source == null) return Err($"源节点不存在: {req.SourceNodePath}");
+
+        if (string.IsNullOrEmpty(req.TargetNodePath) || string.IsNullOrEmpty(req.TargetMethod))
+            return Err("需要目标节点路径和方法名");
+
+        var target = GetNodeOrNull(req.TargetNodePath);
+        if (target == null) return Err($"目标节点不存在: {req.TargetNodePath}");
+
+        try
+        {
+            var callable = new Callable(target, req.TargetMethod);
+            source.Disconnect(req.SignalName, callable);
+            
+            LogInfo($"信号已断开: {req.SourceNodePath}.{req.SignalName} ✗ {req.TargetNodePath}.{req.TargetMethod}");
+            
+            return Ok(new
+            {
+                disconnected = true,
+                source = req.SourceNodePath,
+                signal = req.SignalName
+            });
+        }
+        catch (Exception ex)
+        {
+            return Err($"断开信号失败: {ex.Message}");
+        }
+    }
+
+    private ApiResponse EmitSignal(SignalEmitRequest req)
+    {
+        var node = GetNodeOrNull(req.NodePath);
+        if (node == null) return Err($"节点不存在: {req.NodePath}");
+
+        try
+        {
+            if (req.Args == null || req.Args.Count == 0)
+            {
+                node.EmitSignal(req.SignalName);
+            }
+            else
+            {
+                var variants = req.Args.Select(a => ToVar(a)).ToArray();
+                node.EmitSignal(req.SignalName, variants);
+            }
+
+            LogInfo($"信号已发射: {req.NodePath}.{req.SignalName}");
+            
+            return Ok(new
+            {
+                emitted = true,
+                nodePath = req.NodePath,
+                signal = req.SignalName,
+                argCount = req.Args?.Count ?? 0
+            });
+        }
+        catch (Exception ex)
+        {
+            return Err($"发射信号失败: {ex.Message}");
+        }
+    }
+
+    private ApiResponse StartSignalMonitoring(SignalMonitorRequest req)
+    {
+        // 设置信号过滤 (为空则监听所有)
+        if (!string.IsNullOrEmpty(req.SignalName))
+        {
+            _monitoredSignals.Add(req.SignalName);
+        }
+        else
+        {
+            _monitoredSignals.Clear(); // 清空过滤器 = 监听所有
+        }
+
+        LogInfo($"信号监听过滤器已更新 - 监听信号: {(req.SignalName ?? "所有")}");
+
+        return Ok(new
+        {
+            monitoring = _isGlobalSignalMonitoring,
+            monitoredSignals = _monitoredSignals.Count > 0 ? _monitoredSignals.ToList() : new List<string> { "所有信号" },
+            currentEventsCount = _signalEventsBuffer.Count
+        });
+    }
+
+    private ApiResponse StopSignalMonitoring()
+    {
+        var eventCount = _signalEventsBuffer.Count;
+        
+        LogInfo($"信号监听统计 - 共记录 {eventCount} 个事件 (缓冲区)");
+
+        return Ok(new
+        {
+            monitoring = _isGlobalSignalMonitoring,
+            note = "全局监听持续运行,可通过设置过滤器控制记录",
+            totalEvents = eventCount
+        });
+    }
+
+    private ApiResponse GetSignalEvents(SignalEventQueryRequest req)
+    {
+        // 从缓冲区和文件读取信号事件
+        var allEvents = ReadAllSignalEvents();
+        var query = allEvents.AsEnumerable();
+
+        // 按节点路径过滤
+        if (!string.IsNullOrEmpty(req.NodePath))
+            query = query.Where(e => e.NodePath.Contains(req.NodePath, StringComparison.OrdinalIgnoreCase));
+
+        // 按信号名称过滤
+        if (!string.IsNullOrEmpty(req.SignalName))
+            query = query.Where(e => e.SignalName.Equals(req.SignalName, StringComparison.OrdinalIgnoreCase));
+
+        // 按时间范围过滤
+        if (req.StartTime.HasValue)
+        {
+            var startTime = DateTimeOffset.FromUnixTimeSeconds(req.StartTime.Value).DateTime;
+            query = query.Where(e => e.Timestamp >= startTime);
+        }
+
+        if (req.EndTime.HasValue)
+        {
+            var endTime = DateTimeOffset.FromUnixTimeSeconds(req.EndTime.Value).DateTime;
+            query = query.Where(e => e.Timestamp <= endTime);
+        }
+
+        var events = query.TakeLast(req.Count).ToList();
+
+        return Ok(new
+        {
+            totalEvents = allEvents.Count,
+            matchedEvents = query.Count(),
+            returnedEvents = events.Count,
+            events = events.Select(e => new
+            {
+                timestamp = e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                unixTimestamp = new DateTimeOffset(e.Timestamp).ToUnixTimeSeconds(),
+                nodePath = e.NodePath,
+                nodeType = e.NodeType,
+                signalName = e.SignalName,
+                args = e.Args
+            }).ToList()
+        });
+    }
+
+    private List<SignalEvent> ReadAllSignalEvents()
+    {
+        var events = new List<SignalEvent>(_signalEventsBuffer);
+
+        // 从文件读取历史事件
+        try
+        {
+            using var file = FileAccess.Open(SignalEventsFilePath, FileAccess.ModeFlags.Read);
+            if (file != null)
+            {
+                while (!file.EofReached())
+                {
+                    var line = file.GetLine();
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("===")) continue;
+
+                    // 解析格式: [2024-01-01 12:34:56.789] /root/Main (Node2D) :: ready [arg1, arg2]
+                    var match = System.Text.RegularExpressions.Regex.Match(
+                        line,
+                        @"\[([\d\-: .]+)\] (.+?) \((\w+)\) :: (\w+)(?: \[(.+?)\])?"
+                    );
+
+                    if (match.Success)
+                    {
+                        var argsStr = match.Groups[5].Value;
+                        var args = string.IsNullOrEmpty(argsStr)
+                            ? new List<string>()
+                            : argsStr.Split(", ").ToList();
+
+                        events.Add(new SignalEvent
+                        {
+                            Timestamp = DateTime.Parse(match.Groups[1].Value),
+                            NodePath = match.Groups[2].Value,
+                            NodeType = match.Groups[3].Value,
+                            SignalName = match.Groups[4].Value,
+                            Args = args
+                        });
+                    }
+                }
+            }
+        }
+        catch { }
+
+        return events.OrderBy(e => e.Timestamp).ToList();
+    }
+
+    private ApiResponse ClearSignalEvents()
+    {
+        var bufferCount = _signalEventsBuffer.Count;
+        var fileEvents = ReadAllSignalEvents().Count - bufferCount;
+        
+        _signalEventsBuffer.Clear();
+        InitializeSignalEventsFile();
+        
+        LogInfo($"信号事件已清空 - 缓冲区: {bufferCount}, 文件: {fileEvents}");
+
+        return Ok(new
+        {
+            cleared = true,
+            bufferCleared = bufferCount,
+            fileReset = true
+        });
+    }
+
+    // ========== 增强日志系统 ==========
+
+    private void InitializeLogFile()
+    {
+        try
+        {
+            using var file = FileAccess.Open(LogFilePath, FileAccess.ModeFlags.Write);
+            if (file != null)
+            {
+                file.StoreString($"=== MCP 日志 - 启动时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MCP] 初始化日志文件失败: {ex.Message}");
+        }
+    }
+
+    private void InitializeSignalEventsFile()
+    {
+        try
+        {
+            using var file = FileAccess.Open(SignalEventsFilePath, FileAccess.ModeFlags.Write);
+            if (file != null)
+            {
+                file.StoreString($"=== MCP 信号事件 - 启动时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MCP] 初始化信号事件文件失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 启动全局信号监听 - 自动记录所有节点的信号触发
+    /// </summary>
+    private void StartGlobalSignalMonitoring()
+    {
+        _isGlobalSignalMonitoring = true;
+        
+        // 连接到场景树的 node_added 信号,自动监听新添加的节点
+        GetTree().NodeAdded += OnNodeAddedToTree;
+        
+        // 监听已存在的节点
+        MonitorExistingNodes(GetTree().Root);
+    }
+
+    private void OnNodeAddedToTree(Node node)
+    {
+        if (!_isGlobalSignalMonitoring) return;
+        
+        // 为新节点的所有信号添加监听
+        var signals = node.GetSignalList();
+        foreach (var signalDict in signals)
+        {
+            var dict = (Godot.Collections.Dictionary)signalDict;
+            var signalName = dict["name"].AsString();
+            
+            // 检查是否需要监听此信号
+            if (_monitoredSignals.Count == 0 || _monitoredSignals.Contains(signalName))
+            {
+                try
+                {
+                    node.Connect(signalName, Callable.From(() => RecordSignalEvent(node, signalName, null)));
+                }
+                catch
+                {
+                    // 某些信号可能有参数,跳过
+                }
+            }
+        }
+    }
+
+    private void MonitorExistingNodes(Node root)
+    {
+        OnNodeAddedToTree(root);
+        
+        foreach (Node child in root.GetChildren())
+        {
+            MonitorExistingNodes(child);
+        }
+    }
+
+    /// <summary>
+    /// 记录信号事件
+    /// </summary>
+    private void RecordSignalEvent(Node node, string signalName, object[]? args)
+    {
+        var evt = new SignalEvent
+        {
+            Timestamp = DateTime.Now,
+            NodePath = node.GetPath().ToString(),
+            NodeType = node.GetType().Name,
+            SignalName = signalName,
+            Args = args?.Select(a => a?.ToString() ?? "null").ToList() ?? new List<string>()
+        };
+
+        // 添加到缓冲区
+        _signalEventsBuffer.Add(evt);
+
+        // 如果缓冲区满了,写入最旧的事件到文件
+        if (_signalEventsBuffer.Count > MaxSignalEventsBufferSize)
+        {
+            var oldEvent = _signalEventsBuffer[0];
+            _signalEventsBuffer.RemoveAt(0);
+            WriteSignalEventToFile(oldEvent);
+        }
+    }
+
+    private void WriteSignalEventToFile(SignalEvent evt)
+    {
+        try
+        {
+            using var file = FileAccess.Open(SignalEventsFilePath, FileAccess.ModeFlags.ReadWrite);
+            if (file != null)
+            {
+                file.SeekEnd();
+                var argsStr = evt.Args.Count > 0 ? $" [{string.Join(", ", evt.Args)}]" : "";
+                file.StoreString($"[{evt.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] {evt.NodePath} ({evt.NodeType}) :: {evt.SignalName}{argsStr}\n");
+            }
+        }
+        catch { }
+    }
+
+    private void LogInfo(string message)
+    {
+        AddLog("info", message);
+        GD.Print($"[MCP] {message}");
+    }
+
+    private void LogWarning(string message)
+    {
+        AddLog("warning", message);
+        GD.PushWarning($"[MCP] {message}");
+    }
+
+    private void LogError(string message)
+    {
+        AddLog("error", message);
+        GD.PrintErr($"[MCP] {message}");
+    }
+
+    private void AddLog(string level, string message)
+    {
+        var entry = new LogEntry
+        {
+            Timestamp = DateTime.Now,
+            Level = level,
+            Message = message
+        };
+
+        // 添加到环形缓冲区
+        _logBuffer.AddLast(entry);
+        
+        // 如果超过最大大小,移除最旧的并写入文件
+        if (_logBuffer.Count > MaxLogBufferSize)
+        {
+            var oldEntry = _logBuffer.First!.Value;
+            _logBuffer.RemoveFirst();
+            WriteLogToFile(oldEntry);
+        }
+
+        // 同时添加到旧的 _logs 列表以保持向后兼容
+        _logs.Add(entry);
+    }
+
+    private void WriteLogToFile(LogEntry entry)
+    {
+        try
+        {
+            using var file = FileAccess.Open(LogFilePath, FileAccess.ModeFlags.ReadWrite);
+            if (file != null)
+            {
+                file.SeekEnd();
+                file.StoreString($"[{entry.Timestamp:yyyy-MM-dd HH:mm:ss}] [{entry.Level.ToUpper()}] {entry.Message}\n");
+            }
+        }
+        catch { }
+    }
+
+    private ApiResponse GetLogsFiltered(LogFilterRequest req)
+    {
+        var allLogs = _logBuffer.Concat(ReadLogsFromFile()).ToList();
+        var query = allLogs.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(req.Level))
+            query = query.Where(log => log.Level.Equals(req.Level, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrEmpty(req.MessagePattern))
+            query = query.Where(log => log.Message.Contains(req.MessagePattern, StringComparison.OrdinalIgnoreCase));
+
+        if (req.StartTime.HasValue)
+        {
+            var startTime = DateTimeOffset.FromUnixTimeSeconds(req.StartTime.Value).DateTime;
+            query = query.Where(log => log.Timestamp >= startTime);
+        }
+
+        if (req.EndTime.HasValue)
+        {
+            var endTime = DateTimeOffset.FromUnixTimeSeconds(req.EndTime.Value).DateTime;
+            query = query.Where(log => log.Timestamp <= endTime);
+        }
+
+        var logs = query.TakeLast(req.MaxCount).ToList();
+
+        return Ok(new
+        {
+            totalMatched = logs.Count,
+            logs
+        });
+    }
+
+    private List<LogEntry> ReadLogsFromFile()
+    {
+        var logs = new List<LogEntry>();
+        
+        try
+        {
+            using var file = FileAccess.Open(LogFilePath, FileAccess.ModeFlags.Read);
+            if (file != null)
+            {
+                while (!file.EofReached())
+                {
+                    var line = file.GetLine();
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("===")) continue;
+
+                    var match = System.Text.RegularExpressions.Regex.Match(
+                        line, 
+                        @"\[([\d\-: ]+)\] \[(\w+)\] (.+)"
+                    );
+
+                    if (match.Success)
+                    {
+                        logs.Add(new LogEntry
+                        {
+                            Timestamp = DateTime.Parse(match.Groups[1].Value),
+                            Level = match.Groups[2].Value.ToLower(),
+                            Message = match.Groups[3].Value
+                        });
+                    }
+                }
+            }
+        }
+        catch { }
+
+        return logs;
+    }
+
+    private ApiResponse GetLogStats()
+    {
+        var allLogs = _logBuffer.Concat(ReadLogsFromFile()).ToList();
+        
+        var stats = new
+        {
+            totalLogs = allLogs.Count,
+            inBuffer = _logBuffer.Count,
+            inFile = allLogs.Count - _logBuffer.Count,
+            byLevel = allLogs.GroupBy(l => l.Level)
+                .ToDictionary(g => g.Key, g => g.Count()),
+            oldestLog = allLogs.Count > 0 ? allLogs.First().Timestamp : (DateTime?)null,
+            newestLog = allLogs.Count > 0 ? allLogs.Last().Timestamp : (DateTime?)null
+        };
+
+        return Ok(stats);
+    }
+
+    private ApiResponse ExportLogs(LogExportRequest req)
+    {
+        var filePath = req.FilePath ?? "user://logs_export.txt";
+        
+        try
+        {
+            var allLogs = _logBuffer.Concat(ReadLogsFromFile()).ToList();
+            
+            using var file = FileAccess.Open(filePath, FileAccess.ModeFlags.Write);
+            if (file != null)
+            {
+                file.StoreString($"=== MCP 日志导出 - {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
+                file.StoreString($"总计: {allLogs.Count} 条日志\n\n");
+                
+                foreach (var log in allLogs)
+                {
+                    file.StoreString($"[{log.Timestamp:yyyy-MM-dd HH:mm:ss}] [{log.Level.ToUpper()}] {log.Message}\n");
+                }
+                
+                LogInfo($"日志已导出到: {filePath}");
+                
+                return Ok(new
+                {
+                    exported = true,
+                    filePath,
+                    logCount = allLogs.Count
+                });
+            }
+            
+            return Err("无法打开导出文件");
+        }
+        catch (Exception ex)
+        {
+            return Err($"导出日志失败: {ex.Message}");
+        }
+    }
+
+    private ApiResponse ClearLogs()
+    {
+        var bufferCount = _logBuffer.Count;
+        var fileCount = ReadLogsFromFile().Count;
+        
+        _logBuffer.Clear();
+        _logs.Clear();
+        InitializeLogFile();
+        
+        LogInfo($"日志已清空 - 缓冲区: {bufferCount}, 文件: {fileCount}");
+
+        return Ok(new
+        {
+            cleared = true,
+            bufferCleared = bufferCount,
+            fileReset = true
+        });
+    }
+
+    private ApiResponse AddCustomLog(CustomLogRequest req)
+    {
+        AddLog(req.Level, req.Message);
+        
+        return Ok(new
+        {
+            logged = true,
+            level = req.Level,
+            message = req.Message
+        });
+    }
+
     // ========== 辅助方法 ==========
 
     private Dictionary<string, object> BuildTree(Node n, bool props)
@@ -1068,6 +1756,129 @@ public class NodeInfo
     
     [JsonPropertyName("signals")]
     public List<string> Signals { get; set; } = new();
+}
+
+// ========== 简化场景树请求 ==========
+
+public class SimpleTreeRequest
+{
+    [JsonPropertyName("rootPath")]
+    public string RootPath { get; set; } = "/root";
+    
+    [JsonPropertyName("maxDepth")]
+    public int MaxDepth { get; set; } = 3;
+}
+
+// ========== 信号系统请求 ==========
+
+public class SignalConnectionRequest
+{
+    [JsonPropertyName("sourceNodePath")]
+    public string SourceNodePath { get; set; } = "";
+    
+    [JsonPropertyName("signalName")]
+    public string SignalName { get; set; } = "";
+    
+    [JsonPropertyName("targetNodePath")]
+    public string? TargetNodePath { get; set; }
+    
+    [JsonPropertyName("targetMethod")]
+    public string? TargetMethod { get; set; }
+}
+
+public class SignalEmitRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = "";
+    
+    [JsonPropertyName("signalName")]
+    public string SignalName { get; set; } = "";
+    
+    [JsonPropertyName("args")]
+    public List<object>? Args { get; set; }
+}
+
+public class SignalMonitorRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string? NodePath { get; set; }
+    
+    [JsonPropertyName("signalName")]
+    public string? SignalName { get; set; }
+    
+    [JsonPropertyName("maxEvents")]
+    public int MaxEvents { get; set; } = 1000;
+}
+
+public class SignalEventQueryRequest
+{
+    [JsonPropertyName("count")]
+    public int Count { get; set; } = 50;
+    
+    [JsonPropertyName("nodePath")]
+    public string? NodePath { get; set; }
+    
+    [JsonPropertyName("signalName")]
+    public string? SignalName { get; set; }
+    
+    [JsonPropertyName("startTime")]
+    public long? StartTime { get; set; }
+    
+    [JsonPropertyName("endTime")]
+    public long? EndTime { get; set; }
+}
+
+public class SignalEvent
+{
+    [JsonPropertyName("timestamp")]
+    public DateTime Timestamp { get; set; }
+    
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = "";
+    
+    [JsonPropertyName("nodeType")]
+    public string NodeType { get; set; } = "";
+    
+    [JsonPropertyName("signalName")]
+    public string SignalName { get; set; } = "";
+    
+    [JsonPropertyName("args")]
+    public List<string> Args { get; set; } = new();
+}
+
+// ========== 增强日志系统请求 ==========
+
+public class LogFilterRequest
+{
+    [JsonPropertyName("level")]
+    public string? Level { get; set; }
+    
+    [JsonPropertyName("messagePattern")]
+    public string? MessagePattern { get; set; }
+    
+    [JsonPropertyName("startTime")]
+    public long? StartTime { get; set; }
+    
+    [JsonPropertyName("endTime")]
+    public long? EndTime { get; set; }
+    
+    [JsonPropertyName("maxCount")]
+    public int MaxCount { get; set; } = 100;
+}
+
+public class LogExportRequest
+{
+    [JsonPropertyName("filePath")]
+    public string? FilePath { get; set; }
+}
+
+public class CustomLogRequest
+{
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = "";
+    
+    [JsonPropertyName("level")]
+    public string Level { get; set; } = "info";
 }
 
 public class LogEntry

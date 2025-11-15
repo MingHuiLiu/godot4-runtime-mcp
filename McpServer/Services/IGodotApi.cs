@@ -109,4 +109,55 @@ public interface IGodotApi
     
     [Post("/get_node_context")]
     Task<GodotResponse> GetNodeContextAsync([Body] NodeContextRequest request);
+    
+    // ========== 简化场景树 ==========
+    
+    [Post("/get_scene_tree_simple")]
+    Task<GodotResponse> GetSceneTreeSimpleAsync([Body] SimpleTreeRequest request);
+    
+    // ========== 信号系统 ==========
+    
+    [Post("/get_node_signals")]
+    Task<GodotResponse> GetNodeSignalsAsync([Body] NodePathRequest request);
+    
+    [Post("/get_signal_connections")]
+    Task<GodotResponse> GetSignalConnectionsAsync([Body] SignalConnectionRequest request);
+    
+    [Post("/connect_signal")]
+    Task<GodotResponse> ConnectSignalAsync([Body] SignalConnectionRequest request);
+    
+    [Post("/disconnect_signal")]
+    Task<GodotResponse> DisconnectSignalAsync([Body] SignalConnectionRequest request);
+    
+    [Post("/emit_signal")]
+    Task<GodotResponse> EmitSignalAsync([Body] SignalEmitRequest request);
+    
+    [Post("/start_signal_monitoring")]
+    Task<GodotResponse> StartSignalMonitoringAsync([Body] SignalMonitorRequest request);
+    
+    [Post("/stop_signal_monitoring")]
+    Task<GodotResponse> StopSignalMonitoringAsync();
+    
+    [Post("/get_signal_events")]
+    Task<GodotResponse> GetSignalEventsAsync([Body] SignalEventQueryRequest request);
+    
+    [Post("/clear_signal_events")]
+    Task<GodotResponse> ClearSignalEventsAsync();
+    
+    // ========== 增强日志系统 ==========
+    
+    [Post("/get_logs_filtered")]
+    Task<GodotResponse> GetLogsFilteredAsync([Body] LogFilterRequest request);
+    
+    [Post("/get_log_stats")]
+    Task<GodotResponse> GetLogStatsAsync();
+    
+    [Post("/export_logs")]
+    Task<GodotResponse> ExportLogsAsync([Body] LogExportRequest request);
+    
+    [Post("/clear_logs")]
+    Task<GodotResponse> ClearLogsAsync();
+    
+    [Post("/add_custom_log")]
+    Task<GodotResponse> AddCustomLogAsync([Body] CustomLogRequest request);
 }
