@@ -1,0 +1,434 @@
+### Godot MCP API 测试文件
+### 使用 VSCode REST Client 扩展运行
+### 确保 Godot 游戏正在运行 (HTTP 服务器监听 http://127.0.0.1:7777)
+
+@baseUrl = http://127.0.0.1:7777
+
+### ========== 场景树操作 ==========
+
+### 1. 获取场景树 (不包含属性)
+POST {{baseUrl}}/get_scene_tree
+Content-Type: application/json
+
+{
+  "includeProperties": false
+}
+
+### 2. 获取场景树 (包含属性)
+POST {{baseUrl}}/get_scene_tree
+Content-Type: application/json
+
+{
+  "includeProperties": true
+}
+
+### 3. 获取根节点信息
+POST {{baseUrl}}/get_node_info
+Content-Type: application/json
+
+{
+  "nodePath": "/root"
+}
+
+### 4. 创建新节点
+POST {{baseUrl}}/create_node
+Content-Type: application/json
+
+{
+  "parentPath": "/root",
+  "nodeType": "Node2D",
+  "nodeName": "TestNode"
+}
+
+### 5. 获取新创建的节点信息
+POST {{baseUrl}}/get_node_info
+Content-Type: application/json
+
+{
+  "nodePath": "/root/TestNode"
+}
+
+### 6. 删除节点
+POST {{baseUrl}}/delete_node
+Content-Type: application/json
+
+{
+  "nodePath": "/root/TestNode"
+}
+
+### 7. 加载场景 (需要有效的场景路径)
+# POST {{baseUrl}}/load_scene
+# Content-Type: application/json
+# 
+# {
+#   "scenePath": "res://scenes/main.tscn"
+# }
+
+### ========== 属性操作 ==========
+
+### 8. 获取节点属性值 (示例: Window 的 title)
+POST {{baseUrl}}/get_property
+Content-Type: application/json
+
+{
+  "nodePath": "/root",
+  "propertyName": "title"
+}
+
+### 9. 设置节点属性值
+POST {{baseUrl}}/set_property
+Content-Type: application/json
+
+{
+  "nodePath": "/root",
+  "propertyName": "title",
+  "value": "MCP Test Window"
+}
+
+### 10. 列出节点所有属性
+POST {{baseUrl}}/list_properties
+Content-Type: application/json
+
+{
+  "nodePath": "/root"
+}
+
+### ========== 方法调用 ==========
+
+### 11. 调用节点方法 (无参数)
+POST {{baseUrl}}/call_method
+Content-Type: application/json
+
+{
+  "nodePath": "/root",
+  "methodName": "get_window_id",
+  "args": []
+}
+
+### 12. 调用节点方法 (带参数 - 示例)
+# POST {{baseUrl}}/call_method
+# Content-Type: application/json
+# 
+# {
+#   "nodePath": "/root/Player",
+#   "methodName": "move_and_slide",
+#   "args": []
+# }
+
+### 13. 列出节点所有方法
+POST {{baseUrl}}/list_methods
+Content-Type: application/json
+
+{
+  "nodePath": "/root"
+}
+
+### ========== 脚本和全局变量 ==========
+
+### 14. 执行 C# 代码 (需要 Roslyn 支持)
+POST {{baseUrl}}/execute_csharp
+Content-Type: application/json
+
+{
+  "code": "return 1 + 1;"
+}
+
+### 15. 获取全局变量/自动加载节点
+POST {{baseUrl}}/get_global_variables
+Content-Type: application/json
+
+{}
+
+### ========== 资源管理 ==========
+
+### 16. 获取资源信息
+POST {{baseUrl}}/get_resource_info
+Content-Type: application/json
+
+{
+  "resourcePath": "res://icon.svg"
+}
+
+### 17. 列出资源 (根目录)
+POST {{baseUrl}}/list_resources
+Content-Type: application/json
+
+{
+  "path": "res://",
+  "filter": null
+}
+
+### 18. 列出资源 (指定目录)
+POST {{baseUrl}}/list_resources
+Content-Type: application/json
+
+{
+  "path": "res://",
+  "filter": ".tscn"
+}
+
+### 19. 加载资源
+POST {{baseUrl}}/load_resource
+Content-Type: application/json
+
+{
+  "resourcePath": "res://icon.svg"
+}
+
+### ========== 调试工具 ==========
+
+### 20. 获取性能统计
+POST {{baseUrl}}/get_performance_stats
+Content-Type: application/json
+
+{}
+
+### 21. 获取日志 (最近 10 条)
+POST {{baseUrl}}/get_logs
+Content-Type: application/json
+
+{
+  "count": 10
+}
+
+### 22. 获取日志 (最近 50 条)
+POST {{baseUrl}}/get_logs
+Content-Type: application/json
+
+{
+  "count": 50
+}
+
+### 23. 截取游戏画面
+POST {{baseUrl}}/take_screenshot
+Content-Type: application/json
+
+{
+  "savePath": "user://test_screenshot.png"
+}
+
+### 24. 截取游戏画面 (默认路径)
+POST {{baseUrl}}/take_screenshot
+Content-Type: application/json
+
+{
+  "savePath": null
+}
+
+### 25. 获取当前时间
+POST {{baseUrl}}/get_time
+Content-Type: application/json
+
+{}
+
+### ========== 扩展场景树查询方法 (避免完整树太大) ==========
+
+### 26. 获取节点的直接子节点 (轻量级,不递归)
+POST {{baseUrl}}/get_node_children
+Content-Type: application/json
+
+{
+  "nodePath": "/root"
+}
+
+### 27. 获取节点的父节点
+POST {{baseUrl}}/get_node_parent
+Content-Type: application/json
+
+{
+  "nodePath": "/root/GameWorld"
+}
+
+### 28. 查找指定类型的所有节点
+POST {{baseUrl}}/find_nodes_by_type
+Content-Type: application/json
+
+{
+  "nodeType": "Node2D",
+  "rootPath": "/root"
+}
+
+### 29. 查找 Sprite2D 类型节点
+POST {{baseUrl}}/find_nodes_by_type
+Content-Type: application/json
+
+{
+  "nodeType": "Sprite2D",
+  "rootPath": "/root"
+}
+
+### 30. 按名称搜索节点 (模糊匹配)
+POST {{baseUrl}}/find_nodes_by_name
+Content-Type: application/json
+
+{
+  "namePattern": "Player",
+  "rootPath": "/root"
+}
+
+### 31. 搜索包含 "Camera" 的节点
+POST {{baseUrl}}/find_nodes_by_name
+Content-Type: application/json
+
+{
+  "namePattern": "Camera",
+  "rootPath": "/root"
+}
+
+### 32. 获取场景树统计信息 (节点数量、类型分布)
+POST {{baseUrl}}/get_scene_tree_stats
+Content-Type: application/json
+
+{
+  "nodePath": "/root"
+}
+
+### 33. 检查节点是否存在
+POST {{baseUrl}}/node_exists
+Content-Type: application/json
+
+{
+  "nodePath": "/root/Player"
+}
+
+### 34. 检查不存在的节点
+POST {{baseUrl}}/node_exists
+Content-Type: application/json
+
+{
+  "nodePath": "/root/NonExistent"
+}
+
+### 35. 获取节点子树 (深度=1, 只包含直接子节点)
+POST {{baseUrl}}/get_node_subtree
+Content-Type: application/json
+
+{
+  "nodePath": "/root",
+  "maxDepth": 1
+}
+
+### 36. 获取节点子树 (深度=2, 包含孙节点)
+POST {{baseUrl}}/get_node_subtree
+Content-Type: application/json
+
+{
+  "nodePath": "/root",
+  "maxDepth": 2
+}
+
+### 37. 获取节点子树 (深度=0, 仅当前节点信息)
+POST {{baseUrl}}/get_node_subtree
+Content-Type: application/json
+
+{
+  "nodePath": "/root",
+  "maxDepth": 0
+}
+
+### 38. 获取完整子树 (深度=-1, 无限递归)
+POST {{baseUrl}}/get_node_subtree
+Content-Type: application/json
+
+{
+  "nodePath": "/root",
+  "maxDepth": -1
+}
+
+### ========== 批量测试场景 ==========
+
+### 测试场景 1: 创建节点并查询
+# 1. 创建父节点
+POST {{baseUrl}}/create_node
+Content-Type: application/json
+
+{
+  "parentPath": "/root",
+  "nodeType": "Node2D",
+  "nodeName": "GameWorld"
+}
+
+###
+# 2. 在父节点下创建子节点
+POST {{baseUrl}}/create_node
+Content-Type: application/json
+
+{
+  "parentPath": "/root/GameWorld",
+  "nodeType": "Sprite2D",
+  "nodeName": "Player"
+}
+
+###
+# 3. 查看完整场景树
+POST {{baseUrl}}/get_scene_tree
+Content-Type: application/json
+
+{
+  "includeProperties": false
+}
+
+###
+# 4. 获取子节点信息
+POST {{baseUrl}}/get_node_info
+Content-Type: application/json
+
+{
+  "nodePath": "/root/GameWorld/Player"
+}
+
+###
+# 5. 清理测试节点
+POST {{baseUrl}}/delete_node
+Content-Type: application/json
+
+{
+  "nodePath": "/root/GameWorld"
+}
+
+### ========== 错误测试 ==========
+
+### 测试不存在的节点
+POST {{baseUrl}}/get_node_info
+Content-Type: application/json
+
+{
+  "nodePath": "/root/NonExistentNode"
+}
+
+### 测试未知端点
+POST {{baseUrl}}/unknown_endpoint
+Content-Type: application/json
+
+{
+  "test": "data"
+}
+
+### 测试非 POST 请求
+GET {{baseUrl}}/get_scene_tree
+
+### ========== 性能测试 ==========
+
+### 快速连续查询场景树 (测试并发)
+POST {{baseUrl}}/get_scene_tree
+Content-Type: application/json
+
+{
+  "includeProperties": false
+}
+
+###
+POST {{baseUrl}}/get_scene_tree
+Content-Type: application/json
+
+{
+  "includeProperties": false
+}
+
+###
+POST {{baseUrl}}/get_scene_tree
+Content-Type: application/json
+
+{
+  "includeProperties": false
+}

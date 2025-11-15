@@ -170,6 +170,62 @@ public class GodotClient : IDisposable
             await _godotApi.GetTimeAsync());
     }
 
+    // ========== 扩展场景树查询方法 ==========
+
+    public async Task<string> GetNodeChildrenAsync(string nodePath)
+    {
+        return await ExecuteAsync("GetNodeChildren", async () => 
+            await _godotApi.GetNodeChildrenAsync(new NodePathRequest { NodePath = nodePath }));
+    }
+
+    public async Task<string> GetNodeParentAsync(string nodePath)
+    {
+        return await ExecuteAsync("GetNodeParent", async () => 
+            await _godotApi.GetNodeParentAsync(new NodePathRequest { NodePath = nodePath }));
+    }
+
+    public async Task<string> FindNodesByTypeAsync(string nodeType, string rootPath = "/root")
+    {
+        return await ExecuteAsync("FindNodesByType", async () => 
+            await _godotApi.FindNodesByTypeAsync(new FindNodesRequest 
+            { 
+                NodeType = nodeType, 
+                RootPath = rootPath 
+            }));
+    }
+
+    public async Task<string> FindNodesByNameAsync(string namePattern, string rootPath = "/root")
+    {
+        return await ExecuteAsync("FindNodesByName", async () => 
+            await _godotApi.FindNodesByNameAsync(new FindNodesRequest 
+            { 
+                NamePattern = namePattern, 
+                RootPath = rootPath 
+            }));
+    }
+
+    public async Task<string> GetSceneTreeStatsAsync(string rootPath = "/root")
+    {
+        return await ExecuteAsync("GetSceneTreeStats", async () => 
+            await _godotApi.GetSceneTreeStatsAsync(new NodePathRequest { NodePath = rootPath }));
+    }
+
+    public async Task<string> NodeExistsAsync(string nodePath)
+    {
+        return await ExecuteAsync("NodeExists", async () => 
+            await _godotApi.NodeExistsAsync(new NodePathRequest { NodePath = nodePath }));
+    }
+
+    public async Task<string> GetNodeSubtreeAsync(string nodePath, int maxDepth = 2)
+    {
+        return await ExecuteAsync("GetNodeSubtree", async () => 
+            await _godotApi.GetNodeSubtreeAsync(new SubtreeRequest 
+            { 
+                NodePath = nodePath, 
+                MaxDepth = maxDepth 
+            }));
+    }
+
     // ========== 内部辅助方法 ==========
 
     /// <summary>

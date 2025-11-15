@@ -138,6 +138,33 @@ public class ScreenshotRequest
 }
 
 /// <summary>
+/// 查找节点请求
+/// </summary>
+public class FindNodesRequest
+{
+    [JsonPropertyName("nodeType")]
+    public string? NodeType { get; set; }
+    
+    [JsonPropertyName("namePattern")]
+    public string? NamePattern { get; set; }
+    
+    [JsonPropertyName("rootPath")]
+    public string RootPath { get; set; } = "/root";
+}
+
+/// <summary>
+/// 子树请求
+/// </summary>
+public class SubtreeRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = string.Empty;
+    
+    [JsonPropertyName("maxDepth")]
+    public int MaxDepth { get; set; } = 2;
+}
+
+/// <summary>
 /// Godot API 响应 (强类型)
 /// </summary>
 public class GodotResponse

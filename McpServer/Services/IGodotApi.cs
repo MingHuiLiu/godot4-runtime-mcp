@@ -74,4 +74,27 @@ public interface IGodotApi
     
     [Post("/get_time")]
     Task<GodotResponse> GetTimeAsync();
+    
+    // ========== 扩展场景树查询 ==========
+    
+    [Post("/get_node_children")]
+    Task<GodotResponse> GetNodeChildrenAsync([Body] NodePathRequest request);
+    
+    [Post("/get_node_parent")]
+    Task<GodotResponse> GetNodeParentAsync([Body] NodePathRequest request);
+    
+    [Post("/find_nodes_by_type")]
+    Task<GodotResponse> FindNodesByTypeAsync([Body] FindNodesRequest request);
+    
+    [Post("/find_nodes_by_name")]
+    Task<GodotResponse> FindNodesByNameAsync([Body] FindNodesRequest request);
+    
+    [Post("/get_scene_tree_stats")]
+    Task<GodotResponse> GetSceneTreeStatsAsync([Body] NodePathRequest request);
+    
+    [Post("/node_exists")]
+    Task<GodotResponse> NodeExistsAsync([Body] NodePathRequest request);
+    
+    [Post("/get_node_subtree")]
+    Task<GodotResponse> GetNodeSubtreeAsync([Body] SubtreeRequest request);
 }

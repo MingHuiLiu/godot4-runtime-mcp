@@ -183,6 +183,13 @@ public partial class McpClient : Node
                 "/get_logs" => GetLogs(Deserialize<LogsRequest>(body)),
                 "/take_screenshot" => TakeScreenshot(Deserialize<ScreenshotRequest>(body)),
                 "/get_time" => GetTime(),
+                "/get_node_children" => GetNodeChildren(Deserialize<NodePathRequest>(body)),
+                "/get_node_parent" => GetNodeParent(Deserialize<NodePathRequest>(body)),
+                "/find_nodes_by_type" => FindNodesByType(Deserialize<FindNodesRequest>(body)),
+                "/find_nodes_by_name" => FindNodesByName(Deserialize<FindNodesRequest>(body)),
+                "/get_scene_tree_stats" => GetSceneTreeStats(Deserialize<NodePathRequest>(body)),
+                "/node_exists" => NodeExists(Deserialize<NodePathRequest>(body)),
+                "/get_node_subtree" => GetNodeSubtree(Deserialize<SubtreeRequest>(body)),
                 _ => ErrorResponse($"未知端点: {path}")
             };
         }
@@ -379,6 +386,167 @@ public partial class McpClient : Node
         ticks = Time.GetTicksMsec()
     });
 
+    // ========== 扩展场景树查询方法 ==========
+
+    private ApiResponse GetNodeChildren(NodePathRequest req)
+    {
+        var node = GetNodeOrNull(req.NodePath);
+        if (node == null) return Err($"节点不存在: {req.NodePath}");
+
+        var children = node.GetChildren().Select(c => new
+        {
+            name = c.Name.ToString(),
+            type = c.GetType().Name,
+            path = c.GetPath().ToString()
+        }).ToList();
+
+        return Ok(children);
+    }
+
+    private ApiResponse GetNodeParent(NodePathRequest req)
+    {
+        var node = GetNodeOrNull(req.NodePath);
+        if (node == null) return Err($"节点不存在: {req.NodePath}");
+
+        var parent = node.GetParent();
+        if (parent == null) return Ok(null);
+
+        return Ok(new
+        {
+            name = parent.Name.ToString(),
+            type = parent.GetType().Name,
+            path = parent.GetPath().ToString()
+        });
+    }
+
+    private ApiResponse FindNodesByType(FindNodesRequest req)
+    {
+        var root = GetNodeOrNull(req.RootPath);
+        if (root == null) return Err($"根节点不存在: {req.RootPath}");
+
+        var results = new List<object>();
+        FindNodesByTypeRecursive(root, req.NodeType ?? "", results);
+        
+        return Ok(new { count = results.Count, nodes = results });
+    }
+
+    private void FindNodesByTypeRecursive(Node node, string targetType, List<object> results)
+    {
+        if (node.GetType().Name == targetType)
+        {
+            results.Add(new
+            {
+                name = node.Name.ToString(),
+                type = node.GetType().Name,
+                path = node.GetPath().ToString()
+            });
+        }
+
+        foreach (Node child in node.GetChildren())
+        {
+            FindNodesByTypeRecursive(child, targetType, results);
+        }
+    }
+
+    private ApiResponse FindNodesByName(FindNodesRequest req)
+    {
+        var root = GetNodeOrNull(req.RootPath);
+        if (root == null) return Err($"根节点不存在: {req.RootPath}");
+
+        var pattern = req.NamePattern ?? "";
+        var results = new List<object>();
+        FindNodesByNameRecursive(root, pattern, results);
+        
+        return Ok(new { count = results.Count, nodes = results });
+    }
+
+    private void FindNodesByNameRecursive(Node node, string pattern, List<object> results)
+    {
+        if (node.Name.ToString().Contains(pattern, StringComparison.OrdinalIgnoreCase))
+        {
+            results.Add(new
+            {
+                name = node.Name.ToString(),
+                type = node.GetType().Name,
+                path = node.GetPath().ToString()
+            });
+        }
+
+        foreach (Node child in node.GetChildren())
+        {
+            FindNodesByNameRecursive(child, pattern, results);
+        }
+    }
+
+    private ApiResponse GetSceneTreeStats(NodePathRequest req)
+    {
+        var root = GetNodeOrNull(req.NodePath);
+        if (root == null) return Err($"节点不存在: {req.NodePath}");
+
+        var stats = new Dictionary<string, int>();
+        var totalNodes = 0;
+        CollectStatsRecursive(root, stats, ref totalNodes);
+
+        return Ok(new
+        {
+            totalNodes,
+            nodesByType = stats.OrderByDescending(x => x.Value).ToDictionary(x => x.Key, x => x.Value),
+            rootPath = req.NodePath
+        });
+    }
+
+    private void CollectStatsRecursive(Node node, Dictionary<string, int> stats, ref int total)
+    {
+        total++;
+        var type = node.GetType().Name;
+        stats[type] = stats.GetValueOrDefault(type, 0) + 1;
+
+        foreach (Node child in node.GetChildren())
+        {
+            CollectStatsRecursive(child, stats, ref total);
+        }
+    }
+
+    private ApiResponse NodeExists(NodePathRequest req)
+    {
+        var node = GetNodeOrNull(req.NodePath);
+        return Ok(new { exists = node != null, path = req.NodePath });
+    }
+
+    private ApiResponse GetNodeSubtree(SubtreeRequest req)
+    {
+        var root = GetNodeOrNull(req.NodePath);
+        if (root == null) return Err($"节点不存在: {req.NodePath}");
+
+        var tree = BuildTreeWithDepth(root, req.MaxDepth, 0);
+        return Ok(tree);
+    }
+
+    private Dictionary<string, object> BuildTreeWithDepth(Node n, int maxDepth, int currentDepth)
+    {
+        var d = new Dictionary<string, object>
+        {
+            ["name"] = n.Name,
+            ["type"] = n.GetType().Name,
+            ["path"] = n.GetPath().ToString(),
+            ["depth"] = currentDepth
+        };
+
+        if (maxDepth < 0 || currentDepth < maxDepth)
+        {
+            d["children"] = n.GetChildren()
+                .Select(c => BuildTreeWithDepth(c, maxDepth, currentDepth + 1))
+                .ToList();
+        }
+        else
+        {
+            d["children"] = new List<object>();
+            d["hasChildren"] = n.GetChildCount() > 0;
+        }
+
+        return d;
+    }
+
     // ========== 辅助方法 ==========
 
     private Dictionary<string, object> BuildTree(Node n, bool props)
@@ -565,6 +733,27 @@ public class ScreenshotRequest
 {
     [JsonPropertyName("savePath")]
     public string? SavePath { get; set; }
+}
+
+public class FindNodesRequest
+{
+    [JsonPropertyName("nodeType")]
+    public string? NodeType { get; set; }
+    
+    [JsonPropertyName("namePattern")]
+    public string? NamePattern { get; set; }
+    
+    [JsonPropertyName("rootPath")]
+    public string RootPath { get; set; } = "/root";
+}
+
+public class SubtreeRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = "";
+    
+    [JsonPropertyName("maxDepth")]
+    public int MaxDepth { get; set; } = 2;
 }
 
 // ========== 响应模型 ==========
