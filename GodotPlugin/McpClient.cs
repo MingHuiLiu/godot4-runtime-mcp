@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Linq;
+using FileAccess = Godot.FileAccess;
 
 /// <summary>
 /// MCP HTTP API 服务器 v4.1 - 线程安全版本,所有场景树操作在主线程执行
