@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Linq;
 
 /// <summary>
-/// MCP HTTP API 服务器 v4.0 - 每个方法独立的 HTTP 端点
+/// MCP HTTP API 服务器 v4.1 - 线程安全版本,所有场景树操作在主线程执行
 /// </summary>
 public partial class McpClient : Node
 {
@@ -17,6 +17,10 @@ public partial class McpClient : Node
     private bool _isRunning = false;
     private const string ApiUrl = "http://127.0.0.1:7777/";
     private readonly List<LogEntry> _logs = new();
+    
+    // 线程安全的请求队列
+    private readonly Queue<PendingRequest> _requestQueue = new();
+    private readonly object _queueLock = new();
     
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -28,9 +32,15 @@ public partial class McpClient : Node
     public override void _Ready()
     {
         GD.Print("=".PadRight(60, '='));
-        GD.Print("[MCP] Godot MCP v4.0 - 独立HTTP端点");
+        GD.Print("[MCP] Godot MCP v4.1 - 线程安全独立HTTP端点");
         GD.Print("=".PadRight(60, '='));
         StartServer();
+    }
+
+    public override void _Process(double delta)
+    {
+        // 在主线程处理所有待处理的请求
+        ProcessPendingRequests();
     }
 
     private async void StartServer()
@@ -81,7 +91,21 @@ public partial class McpClient : Node
             using var reader = new System.IO.StreamReader(context.Request.InputStream);
             var body = await reader.ReadToEndAsync();
 
-            var response = RouteRequest(path, body);
+            // 创建待处理请求并等待主线程处理
+            var pendingRequest = new PendingRequest
+            {
+                Path = path,
+                Body = body,
+                CompletionSource = new TaskCompletionSource<ApiResponse>()
+            };
+
+            lock (_queueLock)
+            {
+                _requestQueue.Enqueue(pendingRequest);
+            }
+
+            // 等待主线程处理完成
+            var response = await pendingRequest.CompletionSource.Task;
             
             var json = JsonSerializer.Serialize(response, JsonOptions);
             var bytes = Encoding.UTF8.GetBytes(json);
@@ -96,6 +120,38 @@ public partial class McpClient : Node
             GD.PrintErr($"[MCP] Error: {ex.Message}");
             context.Response.StatusCode = 500;
             context.Response.Close();
+        }
+    }
+
+    /// <summary>
+    /// 在主线程处理所有待处理的请求
+    /// </summary>
+    private void ProcessPendingRequests()
+    {
+        while (true)
+        {
+            PendingRequest? request = null;
+            
+            lock (_queueLock)
+            {
+                if (_requestQueue.Count > 0)
+                {
+                    request = _requestQueue.Dequeue();
+                }
+            }
+
+            if (request == null)
+                break;
+
+            try
+            {
+                var response = RouteRequest(request.Path, request.Body);
+                request.CompletionSource.SetResult(response);
+            }
+            catch (Exception ex)
+            {
+                request.CompletionSource.SetResult(ErrorResponse(ex.Message));
+            }
         }
     }
 
@@ -153,7 +209,7 @@ public partial class McpClient : Node
 
     private ApiResponse GetSceneTree(SceneTreeRequest req)
     {
-        var root = GetTree().Root;  // 获取当前运行中游戏的场景树根节点
+        var root = GetTree().Root;  // 现在安全了,在主线程执行
         var tree = BuildTree(root, req.IncludeProperties);
         return Ok(tree);
     }
@@ -559,4 +615,14 @@ public class LogEntry
     
     [JsonPropertyName("message")]
     public string Message { get; set; } = "";
+}
+
+/// <summary>
+/// 待处理的请求 (用于线程间通信)
+/// </summary>
+internal class PendingRequest
+{
+    public string Path { get; set; } = "";
+    public string Body { get; set; } = "";
+    public TaskCompletionSource<ApiResponse> CompletionSource { get; set; } = null!;
 }
