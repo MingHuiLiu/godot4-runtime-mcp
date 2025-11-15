@@ -25,6 +25,14 @@ public class SceneTools
         return await _godotClient.GetSceneTreeAsync(includeProperties);
     }
 
+    [McpServerTool, Description("获取场景树简化结构 (仅名称和类型,用于快速浏览)")]
+    public async Task<string> GetSceneTreeSimple(
+        [Description("根节点路径")] string rootPath = "/root",
+        [Description("最大深度")] int maxDepth = 3)
+    {
+        return await _godotClient.GetSceneTreeSimpleAsync(rootPath, maxDepth);
+    }
+
     [McpServerTool, Description("获取指定节点的详细信息")]
     public async Task<string> GetNodeInfo(
         [Description("节点路径，例如 '/root/Main/Player'")] string nodePath)
@@ -80,9 +88,28 @@ public class SceneTools
     [McpServerTool, Description("按名称搜索节点 (支持模糊匹配)")]
     public async Task<string> FindNodesByName(
         [Description("节点名称或名称片段")] string namePattern,
+        [Description("搜索根节点路径，默认 '/root'")] string rootPath = "/root",
+        [Description("是否区分大小写")] bool caseSensitive = false,
+        [Description("是否精确匹配 (false=包含匹配)")] bool exactMatch = false)
+    {
+        return await _godotClient.FindNodesByNameAsync(namePattern, rootPath, caseSensitive, exactMatch);
+    }
+
+    [McpServerTool, Description("按组名查找节点")]
+    public async Task<string> FindNodesByGroup(
+        [Description("组名")] string groupName,
         [Description("搜索根节点路径，默认 '/root'")] string rootPath = "/root")
     {
-        return await _godotClient.FindNodesByNameAsync(namePattern, rootPath);
+        return await _godotClient.FindNodesByGroupAsync(groupName, rootPath);
+    }
+
+    [McpServerTool, Description("获取节点的祖先路径 (向上追溯多层)")]
+    public async Task<string> GetNodeAncestors(
+        [Description("节点路径")] string nodePath,
+        [Description("向上追溯层数 (-1=追溯到根节点)")] int levels = -1,
+        [Description("是否包含每层的兄弟节点")] bool includeSiblings = false)
+    {
+        return await _godotClient.GetNodeAncestorsAsync(nodePath, levels, includeSiblings);
     }
 
     [McpServerTool, Description("获取场景树统计信息 (节点数量、类型分布等)")]
@@ -102,8 +129,30 @@ public class SceneTools
     [McpServerTool, Description("获取节点的子树 (指定深度,避免完整树太大)")]
     public async Task<string> GetNodeSubtree(
         [Description("节点路径")] string nodePath,
-        [Description("递归深度 (0=仅当前节点, 1=包含直接子节点, -1=无限深度)")] int maxDepth = 2)
+        [Description("递归深度 (0=仅当前节点, 1=包含直接子节点, -1=无限深度)")] int maxDepth = 2,
+        [Description("是否包含节点属性")] bool includeProperties = false)
     {
-        return await _godotClient.GetNodeSubtreeAsync(nodePath, maxDepth);
+        return await _godotClient.GetNodeSubtreeAsync(nodePath, maxDepth, includeProperties);
+    }
+
+    [McpServerTool, Description("智能搜索节点 (组合多个条件)")]
+    public async Task<string> SearchNodes(
+        [Description("名称模糊匹配 (可选)")] string? namePattern = null,
+        [Description("节点类型 (可选)")] string? nodeType = null,
+        [Description("组名 (可选)")] string? groupName = null,
+        [Description("搜索根路径")] string rootPath = "/root",
+        [Description("最大返回结果数")] int maxResults = 50)
+    {
+        return await _godotClient.SearchNodesAsync(namePattern, nodeType, groupName, rootPath, maxResults);
+    }
+
+    [McpServerTool, Description("获取节点的上下文信息 (父节点、兄弟节点、子节点)")]
+    public async Task<string> GetNodeContext(
+        [Description("节点路径")] string nodePath,
+        [Description("是否包含父节点信息")] bool includeParent = true,
+        [Description("是否包含兄弟节点")] bool includeSiblings = true,
+        [Description("是否包含子节点")] bool includeChildren = true)
+    {
+        return await _godotClient.GetNodeContextAsync(nodePath, includeParent, includeSiblings, includeChildren);
     }
 }

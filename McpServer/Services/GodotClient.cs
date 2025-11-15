@@ -194,13 +194,36 @@ public class GodotClient : IDisposable
             }));
     }
 
-    public async Task<string> FindNodesByNameAsync(string namePattern, string rootPath = "/root")
+    public async Task<string> FindNodesByNameAsync(string namePattern, string rootPath = "/root", bool caseSensitive = false, bool exactMatch = false)
     {
         return await ExecuteAsync("FindNodesByName", async () => 
             await _godotApi.FindNodesByNameAsync(new FindNodesRequest 
             { 
                 NamePattern = namePattern, 
+                RootPath = rootPath,
+                CaseSensitive = caseSensitive,
+                ExactMatch = exactMatch
+            }));
+    }
+
+    public async Task<string> FindNodesByGroupAsync(string groupName, string rootPath = "/root")
+    {
+        return await ExecuteAsync("FindNodesByGroup", async () => 
+            await _godotApi.FindNodesByGroupAsync(new FindNodesRequest 
+            { 
+                GroupName = groupName, 
                 RootPath = rootPath 
+            }));
+    }
+
+    public async Task<string> GetNodeAncestorsAsync(string nodePath, int levels = -1, bool includeSiblings = false)
+    {
+        return await ExecuteAsync("GetNodeAncestors", async () => 
+            await _godotApi.GetNodeAncestorsAsync(new AncestorsRequest 
+            { 
+                NodePath = nodePath, 
+                Levels = levels,
+                IncludeSiblings = includeSiblings
             }));
     }
 
@@ -216,13 +239,39 @@ public class GodotClient : IDisposable
             await _godotApi.NodeExistsAsync(new NodePathRequest { NodePath = nodePath }));
     }
 
-    public async Task<string> GetNodeSubtreeAsync(string nodePath, int maxDepth = 2)
+    public async Task<string> GetNodeSubtreeAsync(string nodePath, int maxDepth = 2, bool includeProperties = false)
     {
         return await ExecuteAsync("GetNodeSubtree", async () => 
             await _godotApi.GetNodeSubtreeAsync(new SubtreeRequest 
             { 
                 NodePath = nodePath, 
-                MaxDepth = maxDepth 
+                MaxDepth = maxDepth,
+                IncludeProperties = includeProperties
+            }));
+    }
+
+    public async Task<string> SearchNodesAsync(string? namePattern, string? nodeType, string? groupName, string rootPath = "/root", int maxResults = 50)
+    {
+        return await ExecuteAsync("SearchNodes", async () => 
+            await _godotApi.SearchNodesAsync(new FindNodesRequest 
+            { 
+                NamePattern = namePattern,
+                NodeType = nodeType,
+                GroupName = groupName,
+                RootPath = rootPath,
+                MaxResults = maxResults
+            }));
+    }
+
+    public async Task<string> GetNodeContextAsync(string nodePath, bool includeParent = true, bool includeSiblings = true, bool includeChildren = true)
+    {
+        return await ExecuteAsync("GetNodeContext", async () => 
+            await _godotApi.GetNodeContextAsync(new NodeContextRequest 
+            { 
+                NodePath = nodePath,
+                IncludeParent = includeParent,
+                IncludeSiblings = includeSiblings,
+                IncludeChildren = includeChildren
             }));
     }
 

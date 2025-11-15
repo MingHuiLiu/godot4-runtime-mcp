@@ -187,9 +187,13 @@ public partial class McpClient : Node
                 "/get_node_parent" => GetNodeParent(Deserialize<NodePathRequest>(body)),
                 "/find_nodes_by_type" => FindNodesByType(Deserialize<FindNodesRequest>(body)),
                 "/find_nodes_by_name" => FindNodesByName(Deserialize<FindNodesRequest>(body)),
+                "/find_nodes_by_group" => FindNodesByGroup(Deserialize<FindNodesRequest>(body)),
+                "/get_node_ancestors" => GetNodeAncestors(Deserialize<AncestorsRequest>(body)),
                 "/get_scene_tree_stats" => GetSceneTreeStats(Deserialize<NodePathRequest>(body)),
                 "/node_exists" => NodeExists(Deserialize<NodePathRequest>(body)),
                 "/get_node_subtree" => GetNodeSubtree(Deserialize<SubtreeRequest>(body)),
+                "/search_nodes" => SearchNodes(Deserialize<FindNodesRequest>(body)),
+                "/get_node_context" => GetNodeContext(Deserialize<NodeContextRequest>(body)),
                 _ => ErrorResponse($"未知端点: {path}")
             };
         }
@@ -455,18 +459,27 @@ public partial class McpClient : Node
 
         var pattern = req.NamePattern ?? "";
         var results = new List<object>();
-        FindNodesByNameRecursive(root, pattern, results);
+        var comparison = req.CaseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         
-        return Ok(new { count = results.Count, nodes = results });
+        FindNodesByNameRecursive(root, pattern, results, req.ExactMatch, comparison, req.MaxResults);
+        
+        return Ok(new { count = results.Count, nodes = results, truncated = results.Count >= req.MaxResults });
     }
 
-    private void FindNodesByNameRecursive(Node node, string pattern, List<object> results)
+    private void FindNodesByNameRecursive(Node node, string pattern, List<object> results, bool exactMatch, StringComparison comparison, int maxResults)
     {
-        if (node.Name.ToString().Contains(pattern, StringComparison.OrdinalIgnoreCase))
+        if (results.Count >= maxResults) return;
+
+        var nodeName = node.Name.ToString();
+        bool matches = exactMatch 
+            ? nodeName.Equals(pattern, comparison)
+            : nodeName.Contains(pattern, comparison);
+
+        if (matches)
         {
             results.Add(new
             {
-                name = node.Name.ToString(),
+                name = nodeName,
                 type = node.GetType().Name,
                 path = node.GetPath().ToString()
             });
@@ -474,8 +487,79 @@ public partial class McpClient : Node
 
         foreach (Node child in node.GetChildren())
         {
-            FindNodesByNameRecursive(child, pattern, results);
+            if (results.Count >= maxResults) break;
+            FindNodesByNameRecursive(child, pattern, results, exactMatch, comparison, maxResults);
         }
+    }
+
+    private ApiResponse FindNodesByGroup(FindNodesRequest req)
+    {
+        var root = GetNodeOrNull(req.RootPath);
+        if (root == null) return Err($"根节点不存在: {req.RootPath}");
+
+        var groupName = req.GroupName ?? "";
+        var nodes = GetTree().GetNodesInGroup(groupName);
+        
+        var results = nodes.Select(n => new
+        {
+            name = n.Name.ToString(),
+            type = n.GetType().Name,
+            path = n.GetPath().ToString(),
+            groups = n.GetGroups().Select(g => g.ToString()).ToList()
+        }).Take(req.MaxResults).ToList();
+
+        return Ok(new { count = results.Count, nodes = results, groupName });
+    }
+
+    private ApiResponse GetNodeAncestors(AncestorsRequest req)
+    {
+        var node = GetNodeOrNull(req.NodePath);
+        if (node == null) return Err($"节点不存在: {req.NodePath}");
+
+        var ancestors = new List<object>();
+        var current = node.GetParent();
+        var level = 0;
+
+        while (current != null && (req.Levels < 0 || level < req.Levels))
+        {
+            var ancestorInfo = new Dictionary<string, object>
+            {
+                ["level"] = level + 1,
+                ["name"] = current.Name.ToString(),
+                ["type"] = current.GetType().Name,
+                ["path"] = current.GetPath().ToString()
+            };
+
+            if (req.IncludeSiblings)
+            {
+                var parent = current.GetParent();
+                if (parent != null)
+                {
+                    var siblings = parent.GetChildren()
+                        .Where(c => c.GetPath() != current.GetPath())
+                        .Select(c => new
+                        {
+                            name = c.Name.ToString(),
+                            type = c.GetType().Name,
+                            path = c.GetPath().ToString()
+                        }).ToList();
+                    
+                    ancestorInfo["siblings"] = siblings;
+                    ancestorInfo["siblingCount"] = siblings.Count;
+                }
+            }
+
+            ancestors.Add(ancestorInfo);
+            current = current.GetParent();
+            level++;
+        }
+
+        return Ok(new 
+        { 
+            nodePath = req.NodePath,
+            ancestorCount = ancestors.Count,
+            ancestors 
+        });
     }
 
     private ApiResponse GetSceneTreeStats(NodePathRequest req)
@@ -484,26 +568,39 @@ public partial class McpClient : Node
         if (root == null) return Err($"节点不存在: {req.NodePath}");
 
         var stats = new Dictionary<string, int>();
+        var groups = new Dictionary<string, int>();
         var totalNodes = 0;
-        CollectStatsRecursive(root, stats, ref totalNodes);
+        var maxDepth = 0;
+        
+        CollectStatsRecursive(root, stats, groups, ref totalNodes, ref maxDepth, 0);
 
         return Ok(new
         {
             totalNodes,
+            maxDepth,
             nodesByType = stats.OrderByDescending(x => x.Value).ToDictionary(x => x.Key, x => x.Value),
+            nodesByGroup = groups.OrderByDescending(x => x.Value).ToDictionary(x => x.Key, x => x.Value),
             rootPath = req.NodePath
         });
     }
 
-    private void CollectStatsRecursive(Node node, Dictionary<string, int> stats, ref int total)
+    private void CollectStatsRecursive(Node node, Dictionary<string, int> stats, Dictionary<string, int> groups, ref int total, ref int maxDepth, int currentDepth)
     {
         total++;
+        if (currentDepth > maxDepth) maxDepth = currentDepth;
+        
         var type = node.GetType().Name;
         stats[type] = stats.GetValueOrDefault(type, 0) + 1;
 
+        foreach (var group in node.GetGroups())
+        {
+            var groupName = group.ToString();
+            groups[groupName] = groups.GetValueOrDefault(groupName, 0) + 1;
+        }
+
         foreach (Node child in node.GetChildren())
         {
-            CollectStatsRecursive(child, stats, ref total);
+            CollectStatsRecursive(child, stats, groups, ref total, ref maxDepth, currentDepth + 1);
         }
     }
 
@@ -518,11 +615,11 @@ public partial class McpClient : Node
         var root = GetNodeOrNull(req.NodePath);
         if (root == null) return Err($"节点不存在: {req.NodePath}");
 
-        var tree = BuildTreeWithDepth(root, req.MaxDepth, 0);
+        var tree = BuildTreeWithDepth(root, req.MaxDepth, 0, req.IncludeProperties);
         return Ok(tree);
     }
 
-    private Dictionary<string, object> BuildTreeWithDepth(Node n, int maxDepth, int currentDepth)
+    private Dictionary<string, object> BuildTreeWithDepth(Node n, int maxDepth, int currentDepth, bool includeProperties)
     {
         var d = new Dictionary<string, object>
         {
@@ -532,19 +629,156 @@ public partial class McpClient : Node
             ["depth"] = currentDepth
         };
 
+        if (includeProperties)
+        {
+            d["properties"] = GetProps(n);
+        }
+
         if (maxDepth < 0 || currentDepth < maxDepth)
         {
             d["children"] = n.GetChildren()
-                .Select(c => BuildTreeWithDepth(c, maxDepth, currentDepth + 1))
+                .Select(c => BuildTreeWithDepth(c, maxDepth, currentDepth + 1, includeProperties))
                 .ToList();
         }
         else
         {
             d["children"] = new List<object>();
             d["hasChildren"] = n.GetChildCount() > 0;
+            d["childCount"] = n.GetChildCount();
         }
 
         return d;
+    }
+
+    private ApiResponse SearchNodes(FindNodesRequest req)
+    {
+        var root = GetNodeOrNull(req.RootPath);
+        if (root == null) return Err($"根节点不存在: {req.RootPath}");
+
+        var results = new List<object>();
+        SearchNodesRecursive(root, req, results);
+
+        return Ok(new 
+        { 
+            count = results.Count, 
+            nodes = results,
+            truncated = results.Count >= req.MaxResults,
+            criteria = new
+            {
+                namePattern = req.NamePattern,
+                nodeType = req.NodeType,
+                groupName = req.GroupName
+            }
+        });
+    }
+
+    private void SearchNodesRecursive(Node node, FindNodesRequest req, List<object> results)
+    {
+        if (results.Count >= req.MaxResults) return;
+
+        bool matches = true;
+
+        // 检查名称匹配
+        if (!string.IsNullOrEmpty(req.NamePattern))
+        {
+            var comparison = req.CaseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+            var nodeName = node.Name.ToString();
+            matches = req.ExactMatch 
+                ? nodeName.Equals(req.NamePattern, comparison)
+                : nodeName.Contains(req.NamePattern, comparison);
+        }
+
+        // 检查类型匹配
+        if (matches && !string.IsNullOrEmpty(req.NodeType))
+        {
+            matches = node.GetType().Name == req.NodeType;
+        }
+
+        // 检查组匹配
+        if (matches && !string.IsNullOrEmpty(req.GroupName))
+        {
+            matches = node.IsInGroup(req.GroupName);
+        }
+
+        if (matches)
+        {
+            results.Add(new
+            {
+                name = node.Name.ToString(),
+                type = node.GetType().Name,
+                path = node.GetPath().ToString(),
+                groups = node.GetGroups().Select(g => g.ToString()).ToList()
+            });
+        }
+
+        foreach (Node child in node.GetChildren())
+        {
+            if (results.Count >= req.MaxResults) break;
+            SearchNodesRecursive(child, req, results);
+        }
+    }
+
+    private ApiResponse GetNodeContext(NodeContextRequest req)
+    {
+        var node = GetNodeOrNull(req.NodePath);
+        if (node == null) return Err($"节点不存在: {req.NodePath}");
+
+        var context = new Dictionary<string, object>
+        {
+            ["node"] = new
+            {
+                name = node.Name.ToString(),
+                type = node.GetType().Name,
+                path = node.GetPath().ToString(),
+                groups = node.GetGroups().Select(g => g.ToString()).ToList()
+            }
+        };
+
+        if (req.IncludeParent)
+        {
+            var parent = node.GetParent();
+            context["parent"] = parent != null ? new
+            {
+                name = parent.Name.ToString(),
+                type = parent.GetType().Name,
+                path = parent.GetPath().ToString()
+            } : null;
+        }
+
+        if (req.IncludeSiblings)
+        {
+            var parent = node.GetParent();
+            if (parent != null)
+            {
+                var siblings = parent.GetChildren()
+                    .Where(c => c.GetPath() != node.GetPath())
+                    .Select(c => new
+                    {
+                        name = c.Name.ToString(),
+                        type = c.GetType().Name,
+                        path = c.GetPath().ToString()
+                    }).ToList();
+                
+                context["siblings"] = siblings;
+                context["siblingCount"] = siblings.Count;
+            }
+        }
+
+        if (req.IncludeChildren)
+        {
+            var children = node.GetChildren().Select(c => new
+            {
+                name = c.Name.ToString(),
+                type = c.GetType().Name,
+                path = c.GetPath().ToString(),
+                childCount = c.GetChildCount()
+            }).ToList();
+            
+            context["children"] = children;
+            context["childCount"] = children.Count;
+        }
+
+        return Ok(context);
     }
 
     // ========== 辅助方法 ==========
@@ -745,6 +979,18 @@ public class FindNodesRequest
     
     [JsonPropertyName("rootPath")]
     public string RootPath { get; set; } = "/root";
+    
+    [JsonPropertyName("caseSensitive")]
+    public bool CaseSensitive { get; set; } = false;
+    
+    [JsonPropertyName("exactMatch")]
+    public bool ExactMatch { get; set; } = false;
+    
+    [JsonPropertyName("groupName")]
+    public string? GroupName { get; set; }
+    
+    [JsonPropertyName("maxResults")]
+    public int MaxResults { get; set; } = 50;
 }
 
 public class SubtreeRequest
@@ -754,6 +1000,36 @@ public class SubtreeRequest
     
     [JsonPropertyName("maxDepth")]
     public int MaxDepth { get; set; } = 2;
+    
+    [JsonPropertyName("includeProperties")]
+    public bool IncludeProperties { get; set; } = false;
+}
+
+public class AncestorsRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = "";
+    
+    [JsonPropertyName("levels")]
+    public int Levels { get; set; } = -1;
+    
+    [JsonPropertyName("includeSiblings")]
+    public bool IncludeSiblings { get; set; } = false;
+}
+
+public class NodeContextRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = "";
+    
+    [JsonPropertyName("includeParent")]
+    public bool IncludeParent { get; set; } = true;
+    
+    [JsonPropertyName("includeSiblings")]
+    public bool IncludeSiblings { get; set; } = true;
+    
+    [JsonPropertyName("includeChildren")]
+    public bool IncludeChildren { get; set; } = true;
 }
 
 // ========== 响应模型 ==========

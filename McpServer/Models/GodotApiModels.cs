@@ -150,6 +150,18 @@ public class FindNodesRequest
     
     [JsonPropertyName("rootPath")]
     public string RootPath { get; set; } = "/root";
+    
+    [JsonPropertyName("caseSensitive")]
+    public bool CaseSensitive { get; set; } = false;
+    
+    [JsonPropertyName("exactMatch")]
+    public bool ExactMatch { get; set; } = false;
+    
+    [JsonPropertyName("groupName")]
+    public string? GroupName { get; set; }
+    
+    [JsonPropertyName("maxResults")]
+    public int MaxResults { get; set; } = 50;
 }
 
 /// <summary>
@@ -162,6 +174,42 @@ public class SubtreeRequest
     
     [JsonPropertyName("maxDepth")]
     public int MaxDepth { get; set; } = 2;
+    
+    [JsonPropertyName("includeProperties")]
+    public bool IncludeProperties { get; set; } = false;
+}
+
+/// <summary>
+/// 祖先节点请求
+/// </summary>
+public class AncestorsRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = string.Empty;
+    
+    [JsonPropertyName("levels")]
+    public int Levels { get; set; } = -1;
+    
+    [JsonPropertyName("includeSiblings")]
+    public bool IncludeSiblings { get; set; } = false;
+}
+
+/// <summary>
+/// 节点上下文请求
+/// </summary>
+public class NodeContextRequest
+{
+    [JsonPropertyName("nodePath")]
+    public string NodePath { get; set; } = string.Empty;
+    
+    [JsonPropertyName("includeParent")]
+    public bool IncludeParent { get; set; } = true;
+    
+    [JsonPropertyName("includeSiblings")]
+    public bool IncludeSiblings { get; set; } = true;
+    
+    [JsonPropertyName("includeChildren")]
+    public bool IncludeChildren { get; set; } = true;
 }
 
 /// <summary>

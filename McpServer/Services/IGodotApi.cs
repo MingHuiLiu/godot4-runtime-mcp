@@ -89,6 +89,12 @@ public interface IGodotApi
     [Post("/find_nodes_by_name")]
     Task<GodotResponse> FindNodesByNameAsync([Body] FindNodesRequest request);
     
+    [Post("/find_nodes_by_group")]
+    Task<GodotResponse> FindNodesByGroupAsync([Body] FindNodesRequest request);
+    
+    [Post("/get_node_ancestors")]
+    Task<GodotResponse> GetNodeAncestorsAsync([Body] AncestorsRequest request);
+    
     [Post("/get_scene_tree_stats")]
     Task<GodotResponse> GetSceneTreeStatsAsync([Body] NodePathRequest request);
     
@@ -97,4 +103,10 @@ public interface IGodotApi
     
     [Post("/get_node_subtree")]
     Task<GodotResponse> GetNodeSubtreeAsync([Body] SubtreeRequest request);
+    
+    [Post("/search_nodes")]
+    Task<GodotResponse> SearchNodesAsync([Body] FindNodesRequest request);
+    
+    [Post("/get_node_context")]
+    Task<GodotResponse> GetNodeContextAsync([Body] NodeContextRequest request);
 }
