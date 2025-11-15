@@ -1,0 +1,19 @@
+{
+  "name": "godot-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Godot 4 C# runtime debugging and development",
+  "main": "index.js",
+  "scripts": {
+    "build": "cd McpServer && dotnet build",
+    "start": "cd McpServer && dotnet run"
+  },
+  "keywords": [
+    "mcp",
+    "godot",
+    "game-development",
+    "debugging",
+    "csharp"
+  ],
+  "author": "",
+  "license": "MIT"
+}

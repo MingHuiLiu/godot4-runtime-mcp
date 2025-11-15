@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "godot": {
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "/Users/arviter/Projects/Godot-Mcp/McpServer/McpServer.csproj"
+      ]
+    }
+  }
+}

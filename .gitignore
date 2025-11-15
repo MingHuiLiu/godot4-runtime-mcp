@@ -1,0 +1,20 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+# Godot
+.import/
+*.import
+export.cfg
+export_presets.cfg
+.mono/
+data_*/
+.godot/
+
+# OS
+.DS_Store
+Thumbs.db
