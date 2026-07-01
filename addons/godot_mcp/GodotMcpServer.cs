@@ -2455,7 +2455,6 @@ public partial class GodotMcpServer : Node
                 detachedChildren = node.GetChildren().Cast<Node>().ToArray();
                 foreach (Node child in detachedChildren)
                     node.RemoveChild(child);
-                node.Owner = node;
             }
 
             // Pack the node
@@ -2560,7 +2559,8 @@ public partial class GodotMcpServer : Node
     /// </summary>
     private void EnsureOwnership(Node root, Node owner, List<Node> touched)
     {
-        if (root.Owner == null)
+        // Don't set owner to itself
+        if (root != owner && root.Owner == null)
         {
             root.Owner = owner;
             touched.Add(root);
