@@ -1,31 +1,21 @@
-# Godot MCP Server v5.0
+# Godot MCP Server v2.0 — 自包含 Godot 插件
 
-一个用于 Godot 4 + C# 项目的完整 MCP (Model Context Protocol) 服务器，允许 AI 助手通过 MCP 协议获取和修改游戏运行时的信息，包括场景树查询、信号系统调试、增强日志分析等功能。
+> **合并版本!** `McpServer` (.NET) + `GodotPlugin` 已合并为单个 Godot 插件。
+> **无需 .NET SDK!** 所有 MCP 功能直接运行在 Godot 引擎内。
 
-## 🆕 v5.0 新功能
+一个用于 Godot 4 + C# 项目的完整 MCP (Model Context Protocol) 服务器，让 AI 助手通过标准的 MCP 协议直接与 Godot 游戏引擎通信。
 
-- ✅ **简化场景树查询** - 仅返回结构和类型,减少 90% 响应大小
-- ✅ **完整信号系统** - 9 个信号工具,支持监听、连接、分析
-- ✅ **增强日志系统** - 环形缓冲区 + 文件持久化 + 多维度过滤
-- ✅ **48 个 MCP 工具** - 覆盖场景树、属性、资源、信号、日志
+## 🏗️ 架构变革
 
-## 🚀 快速开始
-
-**新手？** 查看 [5 分钟快速开始指南](QUICKSTART.md)
-
-**文档导航:**
-- 📚 [完整文档索引](DOCUMENTATION_INDEX.md) - 所有文档的导航中心
-- 📖 [完整使用指南](USAGE.md) - 详细的工具参考和使用示例
-- 🎯 [AI Agent 调试指南](AI_AGENT_DEBUGGING_GUIDE.md) - 实战调试场景
-- 🌲 [场景树查询工具](SCENE_QUERY_TOOLS.md) - 19 种查询方法
-- ⚡ [信号和日志系统](SIGNALS_AND_LOGS_GUIDE.md) - **新增** 完整文档
-- 🔧 [项目集成指南](INTEGRATION.md) - 如何集成到现有项目
-- 💻 [开发者文档](DEVELOPMENT.md) - 架构和扩展开发
--  [项目完成总结](PROJECT_SUMMARY.md) - 实现清单和功能列表
+```
+v1.x (旧):  Agent ←→ [.NET McpServer] ←HTTP→ [GodotPlugin] ←→ Godot
+v2.0 (新):  Agent ←──── HTTP+SSE ──────→ [GodotMcpServer] ←→ Godot
+                                           ↑ 一个插件搞定全部
+```
 
 ## ✨ 核心功能
 
-### 🌲 场景树查询 (19 个工具)
+### 🌲 场景树查询 (17 个工具)
 - 完整/简化场景树获取
 - 模糊搜索 (名称、类型、组)
 - 节点上下文 (父级、兄弟、子级)
@@ -37,12 +27,12 @@
 - 查看信号连接关系
 - 动态连接/断开信号
 - 手动触发信号
-- 实时监听信号事件
-- 信号事件历史记录
+- **全局自动信号监听** — 自动记录所有信号事件
+- 信号事件历史查询 (支持时间范围)
 
 ### 📊 日志系统 (6 个工具)
 - 环形缓冲区 (最近 1000 条)
-- 自动溢出到文件
+- 自动溢出到文件持久化
 - 多维度过滤 (级别、关键字、时间)
 - 日志统计和导出
 - 自定义日志标记
@@ -60,70 +50,80 @@
 - 全局变量
 - 截图功能
 
-## 📦 项目结构
+## 📦 项目结构 (v2.0)
 
 ```
 Godot-Mcp/
-├── McpServer/              # MCP 服务器 (.NET 9.0)
-│   ├── Tools/              # 48 个 MCP 工具
-│   │   ├── SceneTools.cs   # 场景树工具 (13 个)
-│   │   ├── PropertyTools.cs # 属性工具 (4 个)
-│   │   ├── ResourceTools.cs # 资源工具 (5 个)
-│   │   ├── DebugTools.cs   # 调试工具 (12 个)
-│   │   └── SignalTools.cs  # 信号工具 (9 个) ✨
-│   ├── Services/           
-│   │   ├── GodotClient.cs  # 强类型 HTTP 客户端
-│   │   └── IGodotApi.cs    # Refit API 接口
-│   └── Models/
-│       └── GodotApiModels.cs # 所有请求/响应类型
-├── GodotPlugin/            # Godot HTTP 服务器
-│   └── McpClient.cs        # 48 个 HTTP 端点实现 ✨
+├── addons/godot_mcp/       # ✅ 合并后的 Godot MCP 插件
+│   ├── plugin.cfg          # 插件配置
+│   ├── GodotMcpPlugin.cs   # 编辑器插件注册
+│   ├── GodotMcpServer.cs   # MCP HTTP+SSE 服务器 + 48 个工具
+│   └── README.md           # 插件内嵌文档
+├── McpServer/              # 📦 (旧) .NET 控制台应用 - 不再需要
+├── GodotPlugin/            # 📦 (旧) Godot HTTP 插件 - 已合并
+├── start-mcp-bridge.sh     # Stdio 桥接脚本 (for Claude Desktop)
 ├── test-godot-api.http     # HTTP 测试文件
-├── test-new-features.http  # 新功能测试 ✨
+├── test-new-features.http  # 新功能测试文件
 └── 文档/                   # 7 个 Markdown 文档
 ```
 
-## 🛠️ 安装和使用
+## 🛠️ 安装和使用 (v2.0)
 
-### 1. 构建 MCP 服务器
+### 🎯 一步安装
 
-```bash
-cd McpServer
-dotnet build
-```
+1. 将 **`addons/godot_mcp/`** 文件夹复制到你的 Godot 项目的 `addons/` 目录
+2. 在 Godot 编辑器启用插件: **项目设置 → 插件 → 启用 "Godot MCP Server"**
+3. 运行你的 Godot 项目
 
-### 2. 配置 VSCode Copilot
+> ✅ 无需 .NET SDK，无需独立进程，一个插件搞定全部！
 
-在 VSCode 设置中配置 MCP 服务器:
+### 🔌 配置 AI Agent
+
+#### VSCode Copilot (支持 MCP)
+VSCode 不支持直接 HTTP+SSE MCP，请使用 stdio 桥接:
 
 ```json
 {
   "github.copilot.chat.mcp.enabled": true,
   "github.copilot.chat.mcp.servers": {
     "godot": {
-      "command": "dotnet",
-      "args": ["run", "--project", "/path/to/Godot-Mcp/McpServer"]
+      "command": "/path/to/start-mcp-bridge.sh",
+      "args": []
     }
   }
 }
 ```
 
-### 3. 在 Godot 项目中安装插件
+#### Claude Desktop
+```json
+{
+  "mcpServers": {
+    "godot": {
+      "command": "/path/to/start-mcp-bridge.sh",
+      "args": []
+    }
+  }
+}
+```
 
-1. 将 `GodotPlugin/McpClient.cs` 复制到你的 Godot 项目
-2. 在项目设置中添加为 AutoLoad:
-   - 名称: `McpClient`
-   - 路径: `res://McpClient.cs`
+#### 支持 HTTP+SSE 的 Agent
+直接连接:
+- **SSE**: `http://127.0.0.1:7777/sse`
+- **消息**: `POST http://127.0.0.1:7777/messages?session_id=X`
 
-### 4. 运行游戏
+### 🧪 测试连接
 
-启动游戏后,HTTP 服务器自动在 `http://127.0.0.1:7777/` 启动,AI 助手即可通过 MCP 协议与游戏交互。
+```bash
+curl -X POST http://127.0.0.1:7777/get_time \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
 
-## 📝 MCP 工具总览
+## 📝 MCP 工具总览 (48 个)
 
-### 场景树工具 (13 个)
+### 场景树工具 (17 个)
 - `get_scene_tree` - 获取完整场景树 (含属性、方法、信号)
-- `get_scene_tree_simple` - ✨ 获取简化场景树 (仅结构和类型)
+- `get_scene_tree_simple` - 获取简化场景树 (仅结构和类型)
 - `get_node_info` - 获取节点详细信息
 - `get_node_children` - 获取直接子节点列表
 - `get_node_parent` - 获取父节点信息

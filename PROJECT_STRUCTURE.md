@@ -1,4 +1,4 @@
-# Godot MCP 项目文件结构
+# Godot MCP v2.0 项目文件结构
 
 ## 完整项目结构
 
@@ -7,47 +7,74 @@ Godot-Mcp/
 │
 ├── README.md                          # 项目介绍和快速开始
 ├── LICENSE                            # MIT 许可证
+├── QUICKSTART.md                      # 5分钟快速开始指南
+├── ARCHITECTURE_V5.1.md              # 架构说明文档
 ├── USAGE.md                          # 详细使用指南
 ├── INTEGRATION.md                    # Godot 项目集成指南
 ├── DEVELOPMENT.md                    # 开发者文档
+├── HTTP_API_GUIDE.md                 # HTTP API 参考
+├── SCENE_QUERY_TOOLS.md             # 场景树查询工具文档
+├── SIGNALS_AND_LOGS_GUIDE.md        # 信号和日志系统文档
+├── AI_AGENT_DEBUGGING_GUIDE.md      # AI Agent 调试指南
 ├── .gitignore                        # Git 忽略文件
 ├── package.json                      # 项目元数据
 │
-├── start-server.sh                   # Linux/macOS 启动脚本
-├── start-server.bat                  # Windows 启动脚本
+├── addons/godot_mcp/                 # ✅ 合并后的 Godot MCP 插件
+│   ├── plugin.cfg                    # 插件配置
+│   ├── GodotMcpPlugin.cs             # 编辑器插件 (注册 AutoLoad)
+│   ├── GodotMcpServer.cs             # MCP HTTP+SSE 服务器 (核心)
+│   │   ├─ MCP 协议实现 (JSON-RPC 2.0)
+│   │   ├─ HTTP+SSE 传输层
+│   │   ├─ 48 个 MCP 工具实现
+│   │   ├─ 全局信号监控系统
+│   │   └─ 日志管理系统
+│   └── README.md                     # 插件内嵌文档
+│
+├── start-mcp-bridge.sh               # ✅ Stdio 桥接脚本 (for Claude Desktop)
 ├── claude_desktop_config.example.json # Claude Desktop 配置示例
 │
-├── McpServer/                        # MCP 服务器 (.NET 项目)
-│   ├── McpServer.csproj              # 项目文件
-│   ├── Program.cs                    # 主程序入口
-│   │
-│   ├── Models/                       # 数据模型
-│   │   ├── McpModels.cs              # MCP 协议模型
-│   │   └── GodotModels.cs            # Godot 数据模型
-│   │
-│   ├── Services/                     # 服务层
-│   │   └── GodotCommunicationService.cs # Godot 通信服务
-│   │
-│   └── Handlers/                     # MCP 工具处理器
-│       ├── ToolHandler.cs            # 处理器基类
-│       ├── SceneHandlers.cs          # 场景管理工具
-│       └── RuntimeHandlers.cs        # 运行时工具
+├── McpServer/                        # 📦 (旧) .NET 控制台应用 - 不再需要
+│   ├── McpServer.csproj              #    保留供参考
+│   ├── Program.cs
+│   ├── Models/GodotApiModels.cs
+│   ├── Services/GodotClient.cs
+│   ├── Services/IGodotApi.cs
+│   └── Tools/
+│       ├── SceneTools.cs
+│       ├── PropertyTools.cs
+│       ├── MethodTools.cs
+│       ├── ResourceTools.cs
+│       ├── ScriptTools.cs
+│       ├── SignalTools.cs
+│       ├── DebugTools.cs
+│       └── TestTools.cs
 │
-├── GodotPlugin/                      # Godot 插件
-│   ├── plugin.cfg                    # 插件配置
-│   ├── McpPlugin.cs                  # 插件入口
-│   ├── McpClient.cs                  # MCP 客户端
-│   └── RuntimeBridge.cs              # 运行时桥接
+├── GodotPlugin/                      # 📦 (旧) Godot HTTP 插件 - 已合并
+│   ├── plugin.cfg                    #    保留供参考
+│   ├── McpPlugin.cs
+│   └── McpClient.cs
 │
-└── ExampleProject/                   # 示例 Godot 项目
-    └── README.md                     # 示例项目说明
+├── ExampleProject/                   # 示例 Godot 项目
+│   └── README.md                     # 示例项目说明
+│
+├── test-godot-api.http               # HTTP API 测试文件
+└── test-new-features.http            # 新功能测试文件
 ```
 
 ## 文件说明
 
-### 根目录文件
+### 核心文件 (v2.0)
 
-- **README.md**: 项目主文档，包含功能特性、安装步骤和工具列表
+- **addons/godot_mcp/**: 合并后的 Godot MCP 插件，安装即用
+  - **`GodotMcpServer.cs`**: 核心文件，包含 MCP 协议处理器、HTTP+SSE 服务器、48 个工具、信号监听系统、日志系统
+  - **`GodotMcpPlugin.cs`**: 编辑器插件入口，自动注册 GodotMcpServer 为 AutoLoad
+  - **`plugin.cfg`**: 插件元数据
+- **start-mcp-bridge.sh**: Python stdio 桥接脚本，用于兼容 Claude Desktop 等只支持 stdio 的 MCP 客户端
+
+### 旧文件 (v1.x，保留供参考)
+
+- **McpServer/**: 旧的 .NET 控制台应用，不再需要
+- **GodotPlugin/**: 旧的 Godot 插件，已合并到 addons/godot_mcp/
 - **USAGE.md**: 详细的使用指南和 MCP 工具参考
 - **INTEGRATION.md**: 如何将插件集成到现有 Godot 项目
 - **DEVELOPMENT.md**: 架构说明、扩展开发和贡献指南

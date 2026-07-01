@@ -1,53 +1,127 @@
-# 🎮 Godot MCP 快速开始指南
+# 🎮 Godot MCP 快速开始指南 (v2.0)
 
-欢迎使用 Godot MCP！这个 5 分钟快速指南将帮助你快速上手。
+欢迎使用 **Godot MCP v2.0**！合并后的插件版本，**无需 .NET SDK**，一个 Godot 插件自包含 MCP 服务。
 
 ## ⚡ 前置要求
 
 在开始之前，请确保已安装：
 
-- ✅ [.NET 8.0 SDK](https://dotnet.microsoft.com/download)
 - ✅ [Godot 4.x (C# 版本)](https://godotengine.org/download)
-- ✅ [Claude Desktop](https://claude.ai/desktop)
+- ✅ [Claude Desktop](https://claude.ai/desktop)（或其他 MCP 客户端）
 
-## 📦 步骤 1: 配置 MCP 服务器
+> 💡 **不再需要 .NET SDK！** 合并后的 Godot 插件直接运行在 Godot 引擎内。
 
-### macOS/Linux
+---
 
-```bash
-# 1. 进入项目目录
-cd /Users/arviter/Projects/Godot-Mcp
+## 🚀 新架构（推荐）
 
-# 2. 给启动脚本添加执行权限（如果还没有）
-chmod +x start-server.sh
+### 📦 步骤 1: 安装 Godot 插件
 
-# 3. 构建项目
-cd McpServer
-dotnet restore
-dotnet build
-cd ..
+1. 将 `addons/godot_mcp/` 文件夹复制到你的 Godot 项目的 `addons/` 目录
+2. 在 Godot 编辑器中: **项目 → 项目设置 → 插件 → 启用 "Godot MCP Server"**
+3. 运行你的 Godot 项目
+
+启动后控制台会显示：
+```
+============================================================
+[GodotMcp] Godot MCP v2.0 — Unified HTTP+SSE MCP Server
+[GodotMcp] Merged McpServer + GodotPlugin into one addon
+============================================================
+[GodotMcp] 48 MCP tools loaded
+[GodotMcp] ✓ MCP HTTP+SSE server: http://127.0.0.1:7777/
+[GodotMcp]   SSE endpoint:  GET  /sse
+[GodotMcp]   MCP endpoint:  POST /messages?session_id=...
 ```
 
-### Windows
+### 🔧 步骤 2: 配置 Claude Desktop
 
-```cmd
-REM 1. 进入项目目录
-cd C:\Path\To\Godot-Mcp
+#### 方式 A: 使用 Stdio Bridge（推荐 for Claude Desktop）
 
-REM 2. 构建项目
-cd McpServer
-dotnet restore
-dotnet build
-cd ..
+```bash
+# 给桥接脚本添加执行权限
+chmod +x start-mcp-bridge.sh
+
+# 测试连接（确保 Godot 正在运行）
+python3 start-mcp-bridge.sh
 ```
 
-## 🔧 步骤 2: 配置 Claude Desktop
+编辑 `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "godot": {
+      "command": "/ABSOLUTE/PATH/TO/start-mcp-bridge.sh",
+      "args": []
+    }
+  }
+}
+```
 
-### 找到配置文件
+#### 方式 B: 直接 HTTP+SSE（for 支持 HTTP 的 Agent）
 
-**macOS:**
+Agent 直接连接到:
+- **SSE 端点**: `http://127.0.0.1:7777/sse`
+- **消息端点**: `POST http://127.0.0.1:7777/messages?session_id=X`
+
+---
+
+## 📦 旧架构（v1.x，已废弃）
+
+旧架构需要 .NET SDK 和独立的 `McpServer` 进程。仅供现有项目参考。
+
+### 前置要求
+- [.NET 8.0 SDK](https://dotnet.microsoft.com/download)
+- Godot 4.x (C# 版本)
+
+### 配置 Claude Desktop（旧方式）
+```json
+{
+  "mcpServers": {
+    "godot": {
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "/path/to/McpServer/McpServer.csproj"
+      ]
+    }
+  }
+}
+```
+
+---
+
+## 🧪 测试连接
+
+无论哪种方式，都可以用 curl 测试 Godot API：
+
 ```bash
-open ~/Library/Application\ Support/Claude/
+curl -X POST http://127.0.0.1:7777/get_time \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+curl -X POST http://127.0.0.1:7777/get_scene_tree \
+  -H "Content-Type: application/json" \
+  -d '{"includeProperties": false}'
+```
+
+## 📋 可用工具
+
+插件提供 48 个 MCP 工具，覆盖：
+- **场景树操作** (17个): 获取/创建/删除节点、搜索、统计
+- **属性操作** (3个): 读写节点属性
+- **方法调用** (2个): 调用节点方法
+- **资源管理** (3个): 列出/加载/查询资源
+- **脚本执行** (2个): C# 代码执行、全局变量
+- **信号系统** (9个): 监听/查询/连接信号
+- **调试工具** (9个): 日志、性能、截图、时间
+- **信号事件** (3个): 全局历史信号查询
+
+## 🔍 更多信息
+
+- [架构说明](ARCHITECTURE_V5.1.md) - 详细了解架构设计
+- [HTTP API 指南](HTTP_API_GUIDE.md) - HTTP API 参考
+- [场景查询工具](SCENE_QUERY_TOOLS.md) - 场景树查询详情
 ```
 
 **Windows:**

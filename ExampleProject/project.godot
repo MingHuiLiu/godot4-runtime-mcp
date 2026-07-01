@@ -1,0 +1,6 @@
+[application]
+config/name="GodotMCP"
+config/features=PackedStringArray("4.7","C#")
+run/main_scene="res://Main.tscn"
+[rendering]
+renderer/rendering_method="gl_compatibility"

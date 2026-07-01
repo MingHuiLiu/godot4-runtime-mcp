@@ -1,23 +1,62 @@
-# Godot MCP v5.1 架构说明 - 主动记录 vs 被动查询
+# Godot MCP v2.0 架构说明 — 自包含 Godot 插件
 
-## 🔄 架构改进
+## 🏗️ 架构变革: v1.x → v2.0
 
-### v5.0 → v5.1 核心变化
+### v1.x 架构 (旧,两层):
+```
+┌─────────────┐    STDIO     ┌─────────────────┐    HTTP    ┌─────────────────┐
+│  AI Agent   │ ←──────────→ │  .NET McpServer  │ ←────────→ │  GodotPlugin    │
+│ (Claude等)  │   MCP 协议   │  (独立进程)      │  REST API  │  (HTTP Server)  │
+└─────────────┘              └─────────────────┘            └─────────────────┘
+                                    ↑                               ↑
+                             需要 .NET SDK                  Godot 引擎内
+                             需要独立运行
+```
 
-**v5.0 架构** (旧):
-- MCP 工具主动发起 "开始监听" 请求
-- Godot 插件被动响应,临时记录信号
-- 需要 AI 提前知道要监听什么
+**问题:**
+- 需要安装和配置 .NET SDK
+- 需要额外运行一个 .NET 进程
+- 两层通信增加延迟和故障点
+- Agent 无法直接与 Godot 通信
 
-**v5.1 架构** (新):
-- Godot 插件启动时自动开始全局监听
-- 自动记录所有信号到缓冲区/文件
-- MCP 工具只负责查询历史数据
-- AI 可以随时查询,无需提前准备
+### v2.0 架构 (新,一层):
+```
+┌─────────────┐    HTTP+SSE    ┌──────────────────────────────────┐
+│  AI Agent   │ ←────────────→ │  GodotMcpServer (Godot Plugin)   │
+│ (Claude等)  │   MCP 协议     │  - MCP HTTP+SSE Transport        │
+└─────────────┘                │  - 48 MCP Tools                  │
+                               │  - Signal Monitoring             │
+                               │  - Logging System                │
+                               │  - Backward Compat HTTP API      │
+                               └──────────────────────────────────┘
+                                      ↑
+                               Godot 引擎内运行
+                               .NET 功能由 Godot 内置 Mono 提供
+```
+
+**优势:**
+- ✅ **零外部依赖** — 不需要 .NET SDK 或独立进程
+- ✅ **单一插件** — 安装即用，无需额外配置
+- ✅ **直接通信** — Agent 直接与 Godot 对话，减少延迟
+- ✅ **标准 MCP 协议** — 支持 HTTP+SSE 传输层
+- ✅ **向后兼容** — 旧 HTTP API 端点仍然可用
+- ✅ **Stdio 桥接** — 通过 `start-mcp-bridge.sh` 兼容 Claude Desktop
+
+### 传输层对比
+
+| 方式 | 协议 | 适用场景 |
+|------|------|----------|
+| **HTTP+SSE** | MCP over SSE | 支持 HTTP 的 Agent（推荐） |
+| **Stdio Bridge** | MCP over stdio | Claude Desktop |
+| **旧 HTTP API** | REST + JSON | 向后兼容，手动测试 |
 
 ---
 
-## 🎯 设计理念
+## 🔄 内部架构 (v5.1 信号系统)
+
+### 主动记录 vs 被动查询
+
+> 以下内容为 v5.1 的信号系统设计，v2.0 完全继承此设计。
 
 ### 问题场景
 

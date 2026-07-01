@@ -1,14 +1,16 @@
 # 📚 Godot MCP 文档索引
 
-欢迎查看 Godot MCP 项目文档！本页面提供所有文档的快速导航。
+欢迎查看 **Godot MCP v2.0**！这是 McpServer + GodotPlugin 的合并版本。
+> 🎯 **无需 .NET SDK，一个 Godot 插件搞定全部。**
 
 ## 🚀 新手必读
 
 如果你是第一次使用 Godot MCP，建议按以下顺序阅读：
 
-1. **[README.md](README.md)** - 了解项目概况
-2. **[QUICKSTART.md](QUICKSTART.md)** - 5 分钟快速上手
-3. **[USAGE.md](USAGE.md)** - 学习如何使用各种工具
+1. **[README.md](README.md)** - 了解项目概况 (v2.0 新架构)
+2. **[QUICKSTART.md](QUICKSTART.md)** - 5 分钟快速上手（新方式）
+3. **[ARCHITECTURE_V5.1.md](ARCHITECTURE_V5.1.md)** - 理解架构设计
+4. **[USAGE.md](USAGE.md)** - 学习如何使用各种工具
 
 ## 📖 完整文档列表
 
@@ -16,8 +18,9 @@
 
 | 文档 | 描述 | 适合人群 |
 |------|------|----------|
-| [README.md](README.md) | 项目概览、功能特性和基本介绍 | 所有用户 |
-| [QUICKSTART.md](QUICKSTART.md) | 5 分钟快速开始指南 | 新手用户 |
+| [README.md](README.md) | 项目概览、功能特性和 v2.0 新架构 | 所有用户 |
+| [QUICKSTART.md](QUICKSTART.md) | 5 分钟快速开始指南（v2.0 全新流程） | 新手用户 |
+| [ARCHITECTURE_V5.1.md](ARCHITECTURE_V5.1.md) | 架构说明: v1.x→v2.0 变革 + 信号系统设计 | 高级用户 |
 | [USAGE.md](USAGE.md) | 详细的使用说明和工具参考 | 普通用户 |
 
 ### 集成和配置
@@ -25,14 +28,23 @@
 | 文档 | 描述 | 适合人群 |
 |------|------|----------|
 | [INTEGRATION.md](INTEGRATION.md) | 如何将插件集成到现有 Godot 项目 | Godot 开发者 |
-| [claude_desktop_config.example.json](claude_desktop_config.example.json) | Claude Desktop 配置示例 | 所有用户 |
+| [claude_desktop_config.example.json](claude_desktop_config.example.json) | Claude Desktop 配置示例（v2.0 更新） | 所有用户 |
+| [HTTP_API_GUIDE.md](HTTP_API_GUIDE.md) | HTTP API 参考和测试示例 | 开发者 |
+
+### 工具参考
+
+| 文档 | 描述 | 适合人群 |
+|------|------|----------|
+| [SCENE_QUERY_TOOLS.md](SCENE_QUERY_TOOLS.md) | 场景树查询工具详细介绍 | 所有用户 |
+| [SIGNALS_AND_LOGS_GUIDE.md](SIGNALS_AND_LOGS_GUIDE.md) | 信号系统和日志系统指南 | 所有用户 |
+| [AI_AGENT_DEBUGGING_GUIDE.md](AI_AGENT_DEBUGGING_GUIDE.md) | AI Agent 调试实战指南 | AI 开发者 |
 
 ### 开发和扩展
 
 | 文档 | 描述 | 适合人群 |
 |------|------|----------|
 | [DEVELOPMENT.md](DEVELOPMENT.md) | 架构说明、扩展开发指南 | 贡献者、高级用户 |
-| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | 完整的项目结构参考 | 开发者 |
+| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | 完整的项目结构参考（v2.0 更新） | 开发者 |
 
 ### 参考和记录
 
@@ -47,6 +59,18 @@
 | 文档 | 描述 | 适合人群 |
 |------|------|----------|
 | [ExampleProject/README.md](ExampleProject/README.md) | 示例项目说明和测试用例 | 学习者 |
+| [test-godot-api.http](test-godot-api.http) | HTTP API 测试用例（curl/http file） | 开发者 |
+| [test-new-features.http](test-new-features.http) | 新功能测试用例 | 开发者 |
+
+## 🆕 v2.0 新增/变更
+
+- **`addons/godot_mcp/`** — 合并后的自包含 Godot 插件（核心）
+- **`start-mcp-bridge.sh`** — Stdio 桥接脚本（for Claude Desktop）
+- **`ARCHITECTURE_V5.1.md`** — 更新了 v1.x→v2.0 架构对比
+- **`PROJECT_STRUCTURE.md`** — 更新了 v2.0 项目结构
+- **`QUICKSTART.md`** — 重写为 v2.0 安装流程
+- **`claude_desktop_config.example.json`** — 更新配置示例
+- **`start-server.sh` / `start-server.bat`** — 更新提示信息
 
 ## 🎯 按需求查找文档
 

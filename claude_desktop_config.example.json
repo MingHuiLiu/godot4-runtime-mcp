@@ -1,12 +1,24 @@
 {
   "mcpServers": {
     "godot": {
+      "description": "Godot MCP v2.0 — No .NET needed, uses Godot plugin directly",
+      "command": "/ABSOLUTE/PATH/TO/start-mcp-bridge.sh",
+      "args": []
+    }
+  }
+}
+
+/* ===== 旧架构 (v1.x, 需要 .NET SDK) =====
+{
+  "mcpServers": {
+    "godot": {
       "command": "dotnet",
       "args": [
         "run",
         "--project",
-        "/Users/arviter/Projects/Godot-Mcp/McpServer/McpServer.csproj"
+        "/ABSOLUTE/PATH/TO/McpServer/McpServer.csproj"
       ]
     }
   }
 }
+*/

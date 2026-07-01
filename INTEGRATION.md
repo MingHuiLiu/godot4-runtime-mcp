@@ -1,6 +1,47 @@
-# Godot 项目集成示例
+# Godot 项目集成示例 (v2.0)
 
-## 将 MCP 插件添加到现有 Godot 项目
+## 🎯 新方式: 使用合并后的插件 (推荐)
+
+> v2.0 将 McpServer + GodotPlugin 合并为单个 Godot 插件，无需 .NET SDK。
+
+### 步骤 1: 复制插件文件
+
+将 `addons/godot_mcp/` 文件夹复制到你的 Godot 项目：
+
+```
+YourGodotProject/
+├── addons/
+│   └── godot_mcp/                  ← 整个文件夹
+│       ├── plugin.cfg
+│       ├── GodotMcpPlugin.cs
+│       └── GodotMcpServer.cs       ← 自包含 MCP 服务器
+├── scenes/
+├── scripts/
+└── project.godot
+```
+
+### 步骤 2: 启用插件
+
+1. 打开 Godot 编辑器
+2. 进入 **项目 → 项目设置 → 插件**
+3. 找到 **Godot MCP Server**，点击 **启用**
+
+### 步骤 3: 运行游戏
+
+运行项目后，控制台会显示 MCP 服务器已启动的信息：
+```
+[GodotMcp] ✓ MCP HTTP+SSE server: http://127.0.0.1:7777/
+```
+
+### 步骤 4: 连接 AI Agent
+
+详见 [QUICKSTART.md](QUICKSTART.md) 的配置说明。
+
+---
+
+## 📦 旧方式: 使用独立 GodotPlugin (v1.x, 供参考)
+
+> 以下内容仅供引用。新项目请使用上述 v2.0 方式。
 
 ### 步骤 1: 复制插件文件
 
@@ -21,13 +62,7 @@ YourGodotProject/
 
 ### 步骤 2: 确保项目使用 C#
 
-在 Godot 编辑器中，确保项目已启用 C# 支持：
-1. 如果是新项目，创建时选择 "C#" 模板
-2. 如果是现有项目，需要先创建一个 C# 脚本以初始化 .NET 支持
-
-### 步骤 3: 启用插件
-
-1. 打开 Godot 编辑器
+在 Godot 编辑器中，确保项目已启用 C# 支持
 2. 项目 -> 项目设置 -> 插件
 3. 找到 "MCP Client" 并勾选启用
 
