@@ -746,6 +746,39 @@ public partial class GodotMcpServer : Node
                 ["type"] = "object",
                 ["properties"] = new Dictionary<string, object>()
             }
+        },
+        new McpToolDef
+        {
+            Name = "save_node_as_scene",
+            Description = "将指定节点及其子节点保存为 .tscn 场景文件，用于离线分析排查",
+            InputSchema = new Dictionary<string, object>
+            {
+                ["type"] = "object",
+                ["properties"] = new Dictionary<string, object>
+                {
+                    ["nodePath"] = new Dictionary<string, object>
+                    {
+                        ["type"] = "string",
+                        ["description"] = "要保存的节点路径，例如 /root/Main/GameWorld/Player"
+                    },
+                    ["includeChildren"] = new Dictionary<string, object>
+                    {
+                        ["type"] = "boolean",
+                        ["description"] = "是否包含所有子节点（无限层级），默认 true"
+                    },
+                    ["savePath"] = new Dictionary<string, object>
+                    {
+                        ["type"] = "string",
+                        ["description"] = "保存路径（可选），默认 user://mcp_saved_nodes/<nodeName>_<timestamp>.tscn"
+                    },
+                    ["returnContent"] = new Dictionary<string, object>
+                    {
+                        ["type"] = "boolean",
+                        ["description"] = "是否在返回值中包含文件内容文本，默认 true"
+                    }
+                },
+                ["required"] = new List<string> { "nodePath" }
+            }
         }
     };
 
@@ -1270,6 +1303,7 @@ public partial class GodotMcpServer : Node
                 "/get_logs" => HandleToolOperation("get_logs", DeserializeArgs<LogsRequest>(body)),
                 "/take_screenshot" => HandleToolOperation("take_screenshot", DeserializeArgs<ScreenshotRequest>(body)),
                 "/get_time" => HandleToolOperation("get_time", new Dictionary<string, object>()),
+                "/save_node_as_scene" => HandleToolOperation("save_node_as_scene", DeserializeArgs(body)),
                 "/get_node_children" => HandleToolOperation("get_node_children", DeserializeArgs<NodePathRequest>(body)),
                 "/get_node_parent" => HandleToolOperation("get_node_parent", DeserializeArgs<NodePathRequest>(body)),
                 "/find_nodes_by_type" => HandleToolOperation("find_nodes_by_type", DeserializeArgs<FindNodesRequest>(body)),
@@ -1409,6 +1443,11 @@ public partial class GodotMcpServer : Node
                 "get_performance_stats" => GetPerformanceStats(),
                 "take_screenshot" => TakeScreenshot(GetStringOrNull(args, "savePath")),
                 "get_time" => GetTime(),
+                "save_node_as_scene" => SaveNodeAsScene(
+                    GetString(args, "nodePath"),
+                    GetBool(args, "includeChildren", true),
+                    GetStringOrNull(args, "savePath"),
+                    GetBool(args, "returnContent", true)),
 
                 _ => ErrorResponse($"Unknown tool: {toolName}")
             };
@@ -2389,6 +2428,145 @@ public partial class GodotMcpServer : Node
             datetime = DateTime.Now.ToString("s"),
             ticks = Time.GetTicksMsec()
         });
+    }
+
+    // ===================== Node Save Tool =====================
+
+    private ApiResponse SaveNodeAsScene(string nodePath, bool includeChildren, string? savePath, bool returnContent)
+    {
+        var node = GetNodeOrNull(nodePath);
+        if (node == null)
+            return Err($"节点不存在: {nodePath}");
+
+        try
+        {
+            // For Pack() to capture the full subtree, all nodes must have proper Owner set.
+            var ownedNodes = new List<Node>();
+            Node[]? detachedChildren = null;
+
+            if (includeChildren)
+            {
+                // Ensure ownership chain so Pack() captures all descendants
+                EnsureOwnership(node, node, ownedNodes);
+            }
+            else
+            {
+                // Detach children temporarily so Pack() only captures the node itself
+                detachedChildren = node.GetChildren().Cast<Node>().ToArray();
+                foreach (Node child in detachedChildren)
+                    node.RemoveChild(child);
+                node.Owner = node;
+            }
+
+            // Pack the node
+            var packedScene = new PackedScene();
+            var packResult = packedScene.Pack(node);
+
+            // Restore children if we detached them
+            if (!includeChildren && detachedChildren != null)
+            {
+                foreach (Node child in detachedChildren)
+                    node.AddChild(child);
+                node.Owner = null;
+            }
+
+            // Restore owners (if we changed them)
+            if (includeChildren)
+            {
+                foreach (var n in ownedNodes)
+                    n.Owner = null;
+            }
+
+            if (packResult != Godot.Error.Ok)
+                return Err($"打包节点失败，错误码: {packResult}");
+
+            // Determine save path
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var nodeName = node.Name.ToString().Replace(":", "_").Replace("/", "_");
+            var finalPath = savePath ?? $"user://mcp_saved_nodes/{nodeName}_{timestamp}.tscn";
+
+            // Ensure directory exists
+            var dirGlobal = ProjectSettings.GlobalizePath("user://mcp_saved_nodes/");
+            if (!DirAccess.DirExistsAbsolute(dirGlobal))
+                DirAccess.MakeDirRecursiveAbsolute(dirGlobal);
+
+            // Save as .tscn (text format) — no bundle to keep it readable
+            var saveResult = ResourceSaver.Save(packedScene, finalPath);
+            if (saveResult != Godot.Error.Ok)
+                return Err($"保存场景文件失败，错误码: {saveResult}");
+
+            // Read file info
+            var absPath = ProjectSettings.GlobalizePath(finalPath);
+            var fileInfo = new System.IO.FileInfo(absPath);
+
+            // Build result
+            var result = new Dictionary<string, object>
+            {
+                ["nodePath"] = nodePath,
+                ["nodeName"] = node.Name.ToString(),
+                ["nodeType"] = node.GetType().Name,
+                ["includedChildren"] = includeChildren,
+                ["savePath"] = finalPath,
+                ["absolutePath"] = absPath,
+                ["fileSize"] = fileInfo.Length,
+                ["childCount"] = node.GetChildCount()
+            };
+
+            // Optionally return the text content for analysis
+            if (returnContent)
+            {
+                using var file = FileAccess.Open(finalPath, FileAccess.ModeFlags.Read);
+                if (file != null)
+                {
+                    var content = file.GetAsText();
+                    result["content"] = content;
+                    result["contentLength"] = content.Length;
+
+                    var lines = content.Split('\n');
+                    var nodeCount = 0;
+                    var resourceCount = 0;
+                    var extResourceCount = 0;
+                    var subResourceCount = 0;
+                    foreach (var line in lines)
+                    {
+                        var t = line.TrimStart();
+                        if (t.StartsWith("[node")) nodeCount++;
+                        else if (t.StartsWith("[resource")) resourceCount++;
+                        else if (t.StartsWith("[ext_resource")) extResourceCount++;
+                        else if (t.StartsWith("[sub_resource")) subResourceCount++;
+                    }
+                    result["summary"] = new Dictionary<string, object>
+                    {
+                        ["totalLines"] = lines.Length,
+                        ["nodeDefinitions"] = nodeCount,
+                        ["resourceDefinitions"] = resourceCount,
+                        ["extResourceDefinitions"] = extResourceCount,
+                        ["subResourceDefinitions"] = subResourceCount
+                    };
+                }
+            }
+
+            LogInfo($"节点已保存为场景文件: {nodePath} → {finalPath}");
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return Err($"保存节点为场景文件失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Recursively ensure all nodes in the subtree have proper owner set for Pack().
+    /// </summary>
+    private void EnsureOwnership(Node root, Node owner, List<Node> touched)
+    {
+        if (root.Owner == null)
+        {
+            root.Owner = owner;
+            touched.Add(root);
+        }
+        foreach (Node child in root.GetChildren())
+            EnsureOwnership(child, owner, touched);
     }
 
     // ===================== Signal Monitoring System =====================
