@@ -30,3 +30,6 @@ public sealed record ToolInputSchema(string Type, Dictionary<string, ToolParamet
     List<string>? Required = null);
 public sealed record ToolParameterDefinition(string? Type = null, string? Description = null,
     IReadOnlyList<string>? Enum = null);
+
+public sealed record SnapshotNodePage(int Total, int Offset, int Limit,
+    List<GodotRuntimeMcp.Recording.RecordedNode> Items);

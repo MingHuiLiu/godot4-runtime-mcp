@@ -156,7 +156,7 @@ public static class CommandLineApp
         AddSimple(root, "guide", "Offline installation and usage help",
             () => service.RunAsync("godot_setup_guide", new JsonObject()));
 
-        var toolsCmd = new Command("tools", "Search or print the 53 tools");
+        var toolsCmd = new Command("tools", "Search or print the 56 tools");
         var search = StringOption("search", "Filter tool names/descriptions");
         var asJson = BoolOption("json", "Print the raw MCP tool catalog as JSON");
         toolsCmd.Options.Add(search);
@@ -239,8 +239,8 @@ public static class CommandLineApp
         serve.SetAction(async (p, ct) =>
         {
             var portValue = p.GetResult(port) is null ? 18777 : p.GetValue(port);
-            if (portValue is < 1 or > 65535)
-                throw new ArgumentOutOfRangeException(nameof(port), "Expected TCP port 1-65535");
+            if (portValue is < 1 or > 65565)
+                throw new ArgumentOutOfRangeException(nameof(port), "Expected TCP port 1-65565");
             var supplied = p.GetValue(token) ?? Environment.GetEnvironmentVariable("GODOT_MCP_HTTP_TOKEN");
             var bearer = supplied ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
             if (supplied is null) Console.Error.WriteLine("Generated local MCP bearer token: " + bearer);

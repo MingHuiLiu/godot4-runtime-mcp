@@ -36,7 +36,7 @@ public static class CheckpointArchive
             var hashes = new Dictionary<string, string>();
             foreach (string name in PayloadFiles.Where(n => n != "checksums.json"))
                 hashes[name] = await HashAsync(Path.Combine(staging, name), ct);
-            string checksums = JsonSerializer.Serialize(hashes);
+            string checksums = JsonSerializer.Serialize(hashes, SnapshotJsonContext.Default.DictionaryStringString);
             await File.WriteAllTextAsync(Path.Combine(staging, "checksums.json"), checksums, ct);
             hashes["checksums.json"] = await HashAsync(Path.Combine(staging, "checksums.json"), ct);
             var manifest = new CheckpointManifest(

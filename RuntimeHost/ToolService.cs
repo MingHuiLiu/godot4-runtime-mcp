@@ -48,6 +48,23 @@ public sealed class ToolService
                 ["path"] = new("string", "Local ZIP/directory when source=local"),
                 ["force"] = new("boolean", "Back up existing different addon")
             }, ["project"])));
+        runtimeTools.Add(new ToolDefinition("godot_snapshot_list", "List completed checkpoints offline",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project path"),
+              ["limit"] = new("integer", "Maximum results 1..100") }, ["project"])));
+        runtimeTools.Add(new ToolDefinition("godot_snapshot_info", "Validate and inspect a saved checkpoint",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project path"),
+              ["snapshotId"] = new("string", "Saved snapshot ID") }, ["project", "snapshotId"])));
+        runtimeTools.Add(new ToolDefinition("godot_snapshot_nodes", "Page and filter checkpoint nodes offline",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project path"),
+              ["snapshotId"] = new("string", "Saved snapshot ID"),
+              ["nodeId"] = new("string", "Exact node identity"),
+              ["pathPrefix"] = new("string", "Original path prefix"),
+              ["className"] = new("string", "Native node class"),
+              ["offset"] = new("integer", "Start index"),
+              ["limit"] = new("integer", "Page size 1..100") }, ["project", "snapshotId"])));
         _tools = runtimeTools;
     }
 
@@ -105,6 +122,31 @@ public sealed class ToolService
             return JsonSerializer.SerializeToNode(await BackendInstaller.InstallAsync(path,
                 Str(args, "source") ?? "auto", Str(args, "version") ?? "latest",
                 Str(args, "path"), Bool(args, "force")), RuntimeJsonContext.Default.InstallResult);
+        }
+        if (name is "godot_snapshot_list" or "godot_snapshot_info" or "godot_snapshot_nodes")
+        {
+            string targetProject = Str(args, "project") ?? _project ??
+                throw new ArgumentException(name + " requires project");
+            var store = new CheckpointStore();
+            int Number(string key, int fallback)
+            {
+                if (args[key] is not JsonValue value) return fallback;
+                if (value.TryGetValue<int>(out var i)) return i;
+                if (value.TryGetValue<long>(out var l) && l is >= int.MinValue and <= int.MaxValue)
+                    return (int)l;
+                throw new ArgumentException(key + " must be an integer");
+            }
+            if (name == "godot_snapshot_list")
+                return JsonSerializer.SerializeToNode(store.List(targetProject, Number("limit", 50)).ToList(),
+                    Recording.SnapshotJsonContext.Default.ListCheckpointManifest);
+            var snapshotId = Str(args, "snapshotId") ??
+                throw new ArgumentException(name + " requires snapshotId");
+            if (name == "godot_snapshot_info")
+                return JsonSerializer.SerializeToNode(store.Info(targetProject, snapshotId),
+                    Recording.SnapshotJsonContext.Default.CheckpointManifest);
+            return JsonSerializer.SerializeToNode(store.QueryNodes(targetProject, snapshotId,
+                Str(args, "nodeId"), Str(args, "pathPrefix"), Str(args, "className"),
+                Number("offset", 0), Number("limit", 50)), RuntimeJsonContext.Default.SnapshotNodePage);
         }
         if (!_runtimeNames.Contains(name))
             throw new ArgumentException("Unknown MCP tool: " + name);

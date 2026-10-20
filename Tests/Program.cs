@@ -21,9 +21,10 @@ try
     SnapshotContractTests.Run(Assert);
     await CheckpointArchiveTests.RunAsync(Assert, scratch);
     SnapshotToolTests.Run(Assert);
+    await CheckpointStoreTests.RunAsync(Assert, scratch);
     var tools = new ToolService();
-    Assert(tools.Catalog().Count == 53, "All 48 runtime tools plus 5 management tools available offline");
-    Assert(tools.CatalogModels.Count == 53 && tools.CatalogModels.All(t => t.InputSchema.Type == "object"),
+    Assert(tools.Catalog().Count == 56, "All 48 runtime tools plus 5 management tools available offline");
+    Assert(tools.CatalogModels.Count == 56 && tools.CatalogModels.All(t => t.InputSchema.Type == "object"),
         "Canonical tool catalog deserializes into strongly typed ToolDefinition records");
     var github = JsonSerializer.Deserialize("""
         {"tag_name":"v3.1.0","assets":[{"name":"godot-runtime-addon.zip","browser_download_url":"https://example.invalid/addon.zip"}]}
@@ -39,7 +40,7 @@ try
     Assert(tools.Catalog().All(t =>
         ToolCommandLine.Resolve(tools, t!["name"]!.ToString().Replace('_', '-')) ==
             t["name"]!.ToString()),
-        "All 53 MCP tools have direct kebab-case CLI commands");
+        "All 56 MCP tools have direct kebab-case CLI commands");
     var schemaFailures = new List<string>();
     foreach (var tool in tools.Catalog().OfType<JsonObject>())
     {
@@ -70,7 +71,7 @@ try
         catch (ArgumentException ex) { schemaFailures.Add(name + ": " + ex.Message); }
     }
     Assert(schemaFailures.Count == 0,
-        "All 53 CLI commands accept typed flags for every manifest property: " +
+        "All 56 CLI commands accept typed flags for every manifest property: " +
             string.Join("; ", schemaFailures));
     var cliHelp = ToolCommandLine.Describe(ToolCommandLine.Find(tools, "get-node-info")!);
     Assert(cliHelp.Contains("--node-path") && cliHelp.Contains("(required)") &&
@@ -270,12 +271,12 @@ try
         typeof(ToolService).Assembly.Location,
         Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ??
         (File.Exists(homeDotnet) ? homeDotnet : "dotnet"));
-    Assert(true, "Official MCP SDK client initializes, lists 53 tools and invokes offline status over stdio");
+    Assert(true, "Official MCP SDK client initializes, lists 56 tools and invokes offline status over stdio");
     await GodotRuntimeMcp.Tests.McpSdkSmoke.RunHttpAsync(
         typeof(ToolService).Assembly.Location,
         Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ??
         (File.Exists(homeDotnet) ? homeDotnet : "dotnet"));
-    Assert(true, "Official MCP SDK HTTP client authenticates, lists 53 tools and invokes offline status");
+    Assert(true, "Official MCP SDK HTTP client authenticates, lists 56 tools and invokes offline status");
 
     Console.WriteLine($"\nALL {passed} ASSERTIONS PASSED");
     return 0;
