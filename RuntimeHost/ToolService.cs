@@ -65,6 +65,20 @@ public sealed class ToolService
               ["className"] = new("string", "Native node class"),
               ["offset"] = new("integer", "Start index"),
               ["limit"] = new("integer", "Page size 1..100") }, ["project", "snapshotId"])));
+        runtimeTools.Add(new ToolDefinition("godot_snapshot_export_tscn",
+            "Export a verified .tscn from a saved checkpoint using isolated Godot Mono",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project path"),
+              ["snapshotId"] = new("string", "Saved snapshot ID"),
+              ["strict"] = new("boolean", "Require lossless supported properties (default true)"),
+              ["godotBinary"] = new("string", "Optional Godot Mono executable") },
+              ["project", "snapshotId"])));
+        runtimeTools.Add(new ToolDefinition("godot_snapshot_export_status",
+            "Check asynchronous headless export job and resulting scene file",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project path"),
+              ["jobId"] = new("string", "Export job ID") },
+              ["project", "jobId"])));
         _tools = runtimeTools;
     }
 
@@ -147,6 +161,24 @@ public sealed class ToolService
             return JsonSerializer.SerializeToNode(store.QueryNodes(targetProject, snapshotId,
                 Str(args, "nodeId"), Str(args, "pathPrefix"), Str(args, "className"),
                 Number("offset", 0), Number("limit", 50)), RuntimeJsonContext.Default.SnapshotNodePage);
+        }
+        if (name is "godot_snapshot_export_tscn" or "godot_snapshot_export_status")
+        {
+            string targetProject = Str(args, "project") ?? _project ??
+                throw new ArgumentException(name + " requires project");
+            var jobs = new ExportJobManager();
+            if (name == "godot_snapshot_export_tscn")
+            {
+                var snap = Str(args, "snapshotId") ??
+                    throw new ArgumentException("snapshotId is required");
+                bool strict = args["strict"] is not JsonValue val ||
+                    !val.TryGetValue<bool>(out bool strictValue) || strictValue;
+                return JsonSerializer.SerializeToNode(jobs.Start(targetProject, snap, strict,
+                    Str(args, "godotBinary")), Recording.SnapshotJsonContext.Default.SnapshotJobInfo);
+            }
+            string jobId = Str(args, "jobId") ?? throw new ArgumentException("jobId required");
+            return JsonSerializer.SerializeToNode(jobs.Status(targetProject, jobId),
+                RuntimeJsonContext.Default.SceneExportJobStatus);
         }
         if (!_runtimeNames.Contains(name))
             throw new ArgumentException("Unknown MCP tool: " + name);

@@ -22,6 +22,7 @@ namespace GodotRuntimeMcp;
 [JsonSerializable(typeof(BackendHealth))]
 [JsonSerializable(typeof(GithubRelease))]
 [JsonSerializable(typeof(SnapshotNodePage))]
+[JsonSerializable(typeof(SceneExportJobStatus))]
 [JsonSerializable(typeof(List<ToolDefinition>))]
 [JsonSerializable(typeof(ToolDefinition))]
 [JsonSerializable(typeof(ToolInputSchema))]

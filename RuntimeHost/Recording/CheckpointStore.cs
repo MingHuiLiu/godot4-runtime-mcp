@@ -56,6 +56,9 @@ public sealed class CheckpointStore
         throw new FileNotFoundException("snapshot_not_found: snapshot not present in project", snapshotId);
     }
 
+    public string GetSnapshotDirectory(string projectPath, string snapshotId) =>
+        Resolve(projectPath, snapshotId);
+
     public IReadOnlyList<CheckpointManifest> List(string projectPath, int limit = 50)
     {
         if (limit < 1 || limit > 100)

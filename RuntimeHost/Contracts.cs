@@ -33,3 +33,7 @@ public sealed record ToolParameterDefinition(string? Type = null, string? Descri
 
 public sealed record SnapshotNodePage(int Total, int Offset, int Limit,
     List<GodotRuntimeMcp.Recording.RecordedNode> Items);
+
+public sealed record SceneExportJobStatus(string JobId, string Status,
+    string? ScenePath, string? ReportPath, string? Code, string? Message,
+    int? Pid = null);
