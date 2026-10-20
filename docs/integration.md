@@ -46,7 +46,7 @@ AOT 版示例：
 ./godot-runtime-cli serve --port 18777 --token YOUR_LOCAL_TOKEN
 ```
 
-对 `http://127.0.0.1:18777/mcp` 发送 `POST`、`Content-Type: application/json` 及 `Authorization: Bearer YOUR_LOCAL_TOKEN`。只支持无状态 JSON-RPC POST，不支持 SSE GET。普通桌面 Agent 建议选 stdio。
+使用支持 MCP Streamable HTTP 的客户端连接 `http://127.0.0.1:18777/mcp`，配置 `Authorization: Bearer YOUR_LOCAL_TOKEN`。初始化、头部和流式响应由官方 MCP C# SDK 协商处理，不再需要调用方手工模拟简化版 JSON-RPC POST。普通桌面 Agent 建议优先使用 stdio。
 
 ## 离线管理工具
 

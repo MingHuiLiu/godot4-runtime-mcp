@@ -1,8 +1,7 @@
 using System.Diagnostics;
 using System.Net;
-using System.Text.Json.Nodes;
-using System.Text;
 using System.Text.Json;
+using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 
 namespace GodotRuntimeMcp;
@@ -10,11 +9,8 @@ namespace GodotRuntimeMcp;
 public sealed record RuntimeEntry(int Protocol, string InstanceId, int Pid,
     string ProjectPath, int Port, string Token, string StartedAt, string Heartbeat)
 {
-    public JsonNode Public => new JsonObject
-    {
-        ["projectPath"] = ProjectPath, ["instanceId"] = InstanceId,
-        ["pid"] = Pid, ["port"] = Port, ["startedAt"] = StartedAt, ["heartbeat"] = Heartbeat
-    };
+    public RuntimeInstanceInfo Public =>
+        new(ProjectPath, InstanceId, Pid, Port, StartedAt, Heartbeat);
 }
 
 public static class RuntimeRegistry
@@ -150,14 +146,13 @@ public static class RuntimeRegistry
         {
             using var response = await Http.GetAsync($"http://127.0.0.1:{entry.Port}/health", cts.Token);
             if (!response.IsSuccessStatusCode) return false;
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cts.Token));
-            var root = json.RootElement;
-            return root.GetProperty("protocol").GetInt32() == 1 &&
-                root.GetProperty("status").GetString() == "running" &&
-                root.GetProperty("instanceId").GetString() == entry.InstanceId &&
-                root.GetProperty("projectPath").GetString() == entry.ProjectPath &&
-                root.GetProperty("pid").GetInt32() == entry.Pid &&
-                root.GetProperty("port").GetInt32() == entry.Port;
+            var health = await response.Content.ReadFromJsonAsync(
+                RuntimeJsonContext.Default.BackendHealth, cts.Token);
+            return health is { Protocol: 1, Status: "running" } &&
+                health.InstanceId == entry.InstanceId &&
+                health.ProjectPath == entry.ProjectPath &&
+                health.Pid == entry.Pid &&
+                health.Port == entry.Port;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException
             or KeyNotFoundException or OperationCanceledException)
@@ -202,22 +197,23 @@ public static class RuntimeRegistry
         using var request = new HttpRequestMessage(HttpMethod.Post,
             $"http://127.0.0.1:{entry.Port}/call");
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", entry.Token);
-        request.Content = new StringContent(new JsonObject
-        {
-            ["tool"] = tool,
-            ["arguments"] = JsonNode.Parse(args.ValueKind == JsonValueKind.Object ? args.GetRawText() : "{}")
-        }.ToJsonString(), Encoding.UTF8, "application/json");
+        if (args.ValueKind != JsonValueKind.Object)
+            throw new ArgumentException("Godot tool arguments must be a JSON object", nameof(args));
+        var payload = new BackendCallRequest(tool, args);
+        request.Content = JsonContent.Create(payload,
+            RuntimeJsonContext.Default.BackendCallRequest);
         using var response = await Http.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Godot backend HTTP {(int)response.StatusCode}: {body}");
-        using var result = JsonDocument.Parse(body);
-        if (!result.RootElement.TryGetProperty("success", out var ok))
-            throw new InvalidOperationException("Invalid response from Godot backend");
-        if (!ok.GetBoolean())
-            throw new InvalidOperationException(result.RootElement.TryGetProperty("error", out var error)
-                ? error.ToString() : "Godot operation failed");
-        return result.RootElement.TryGetProperty("data", out var data)
-            ? data.Clone() : JsonDocument.Parse("null").RootElement.Clone();
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException($"Godot backend HTTP {(int)response.StatusCode}: {error}");
+        }
+        var result = await response.Content.ReadFromJsonAsync(
+            RuntimeJsonContext.Default.BackendCallResult)
+            ?? throw new InvalidOperationException("Invalid response from Godot backend");
+        if (!result.Success)
+            throw new InvalidOperationException(result.Error ?? "Godot operation failed");
+        return result.Data.ValueKind != JsonValueKind.Undefined
+            ? result.Data.Clone() : JsonDocument.Parse("null").RootElement.Clone();
     }
 }

@@ -15,6 +15,10 @@ using System.Threading.Tasks;
 /// stdio/HTTP MCP and CLI are independent clients of this authenticated local API.
 /// Only Pump() executes Godot operations, on the main thread.
 /// </summary>
+// The network envelope is typed; only individual Godot Variant arguments are dynamic.
+internal sealed record GodotRuntimeCallRequest(
+    string Tool, Dictionary<string, JsonElement>? Arguments);
+
 internal sealed class GodotRuntimeTransport : IDisposable
 {
     private const int MaxBodyBytes = 1024 * 1024;
@@ -245,27 +249,16 @@ internal sealed class GodotRuntimeTransport : IDisposable
                     return;
                 }
             }
-            using var document = JsonDocument.Parse(body.ToString());
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object ||
-                !root.TryGetProperty("tool", out var toolElement) ||
-                toolElement.ValueKind != JsonValueKind.String)
+            var call = JsonSerializer.Deserialize<GodotRuntimeCallRequest>(
+                body.ToString(), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            if (call == null || string.IsNullOrWhiteSpace(call.Tool))
             {
                 await Reply(response, 400, new { error = "Expected tool string" });
                 return;
             }
-            var tool = toolElement.GetString() ?? "";
-            var args = new Dictionary<string, object>();
-            if (root.TryGetProperty("arguments", out var argElement))
-            {
-                if (argElement.ValueKind != JsonValueKind.Object)
-                {
-                    await Reply(response, 400, new { error = "arguments must be an object" });
-                    return;
-                }
-                args = JsonSerializer.Deserialize<Dictionary<string, object>>(argElement.GetRawText()) ?? args;
-            }
-            var item = new WorkItem { Tool = tool, Arguments = args };
+            var arguments = (call.Arguments ?? new Dictionary<string, JsonElement>())
+                .ToDictionary(entry => entry.Key, entry => (object)entry.Value);
+            var item = new WorkItem { Tool = call.Tool, Arguments = arguments };
             lock (_lock)
             {
                 if (_disposed)

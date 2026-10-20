@@ -80,4 +80,4 @@ dotnet build Godot-Mcp.sln -c Release
 
 ## 已知边界
 
-`execute_csharp` 保留了旧接口名称，但不含 Roslyn，调用会明确返回不支持；本项目不提供任意 C# 代码执行。MCP HTTP 为本机认证 JSON-RPC POST（不支持 GET/SSE 流），优先使用 stdio。Release 二进制未经过 Apple 公证；请从可信来源获取并校验 SHA-256。运行时操作会修改真实游戏状态，只对可信 Agent 开放。
+`execute_csharp` 保留了旧接口名称，但不含 Roslyn，调用会明确返回不支持；本项目不提供任意 C# 代码执行。MCP HTTP 现由官方 SDK 提供 Streamable HTTP（包括协议要求的消息、版本和可能的事件流），优先推荐 stdio。Release 二进制未经过 Apple 公证；请从可信来源获取并校验 SHA-256。运行时操作会修改真实游戏状态，只对可信 Agent 开放。

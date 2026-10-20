@@ -11,10 +11,12 @@ Agent / Terminal
          │
          ▼
 RuntimeHost (C#/.NET 8, 发布为 Native AOT)
-├── Program.cs             命令入口
-├── McpProtocol.cs         MCP JSON-RPC 与 ToolService
-├── RuntimeRegistry.cs     项目/实例发现、健康检查、唯一目标选择
-└── BackendInstaller.cs    Release ZIP / 嵌入资源 / 本地 ZIP 安装
+├── Program.cs / CommandLineApp.cs    System.CommandLine 入口
+├── McpHost.cs                    官方 MCP SDK stdio/HTTP + ASP.NET Core
+├── ToolService.cs                强类型工具目录 + Godot Variant 适配
+├── Contracts.cs / RuntimeJsonContext.cs  records、JSON 源生成
+├── RuntimeRegistry.cs            项目/实例发现、健康检查、唯一目标选择
+└── BackendInstaller.cs           Release ZIP / 嵌入资源 / 本地 ZIP 安装
          │  localhost HTTP + Bearer Token
          ▼
 Godot 4 .NET 游戏进程（每进程一个 Backend）
@@ -26,7 +28,7 @@ Godot 4 .NET 游戏进程（每进程一个 Backend）
 
 宿主程序集在构建时嵌入 `addons/godot_mcp/tool_manifest.json` 和插件源码。`initialize`、`tools/list`、`godot_status`、`godot_list_projects`、`godot_list_instances`、`godot_setup_guide`、`godot_install_backend` 无须运行中的 Godot 游戏。其余操作必须查找实时实例并发起本机 HTTP 调用。
 
-`tool_manifest.json` 是 46 项工具 Schema 的唯一源文件；`McpProtocol.cs` 再补充 5 项宿主管理工具。CLI、MCP stdio、MCP HTTP 共用 `ToolService.RunAsync`。
+`tool_manifest.json` 是 46 项工具 Schema 的唯一源文件；`ToolService.cs` 再补充 5 项宿主管理工具。CLI 由 System.CommandLine 2.0.11 提供参数解析，MCP stdio/HTTP 由官方 ModelContextProtocol.AspNetCore 2.2.0 提供协议和传输，HTTP 使用 ASP.NET Core/Kestrel。它们共用 `ToolService.RunAsync`。内部 `ToolDefinition`/`ToolInputSchema` 是强类型模型；只有向 Godot 发任意 Variant 参数时需要 JSON。
 
 ## 实例发现与路由
 
@@ -44,4 +46,4 @@ Godot 的 `GodotRuntimeTransport` 在线程池接收 JSON，认证后把 `tool`�
 
 ## 安全与限制
 
-后端只绑定 `127.0.0.1`，私有 Bearer Token 不向普通 CLI 列表公开；HTTP MCP 另有独立认证令牌。威胁模型是可信同一操作系统用户使用本机开发工具，而不是多租户或互联网服务。MCP HTTP 的实现为无状态 POST JSON-RPC，未提供流式 GET/SSE。当前没有完整的插件/宿主版本兼容协商或长任务调度。 `execute_csharp` 不实现动态 C# 执行。
+后端只绑定 `127.0.0.1`，私有 Bearer Token 不向普通 CLI 列表公开；HTTP MCP 另有独立认证令牌。威胁模型是可信同一操作系统用户使用本机开发工具，而不是多租户或互联网服务。MCP HTTP 由官方 SDK 实现 Streamable HTTP；会按照协商版本处理标准 MCP 请求/事件流（不再是自写的 POST JSON-RPC 子集）。当前没有完整的插件/宿主版本兼容协商或长任务调度。 `execute_csharp` 不实现动态 C# 执行。

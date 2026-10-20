@@ -5,10 +5,10 @@ using System.Text.Json.Nodes;
 
 namespace GodotRuntimeMcp;
 
-/// <summary>Schema-driven, AOT-safe CLI arguments for every MCP tool.</summary>
+/// <summary>Only maps tool-specific Godot Variant/JSON option values; System.CommandLine parses CLI syntax.</summary>
 public static class ToolCommandLine
 {
-    private static string Kebab(string text)
+    public static string Kebab(string text)
     {
         var result = new StringBuilder();
         foreach (var c in text)
@@ -24,47 +24,39 @@ public static class ToolCommandLine
         return result.ToString();
     }
 
-    private static string Canonical(string text) => text.Replace('-', '_');
+    public static ToolDefinition? Find(ToolService service, string command) =>
+        service.CatalogModels.FirstOrDefault(tool =>
+            tool.Name == command.Replace('-', '_') || Kebab(tool.Name) == command);
 
-    public static JsonObject? Find(ToolService service, string command) =>
-        service.Catalog().OfType<JsonObject>().FirstOrDefault(item =>
-            item["name"]?.ToString() == Canonical(command) ||
-            Kebab(item["name"]?.ToString() ?? "") == command);
+    public static string? Resolve(ToolService service, string command) =>
+        Find(service, command)?.Name;
 
-    public static string? Resolve(ToolService service, string command) => Find(service, command)?["name"]?.ToString();
-
-    private static JsonObject Props(JsonObject tool) =>
-        tool["inputSchema"]?["properties"] as JsonObject ?? new JsonObject();
-
-    public static string Describe(JsonObject tool)
+    public static string Describe(ToolDefinition tool)
     {
-        var name = tool["name"]!.ToString();
-        var props = Props(tool);
-        var required = (tool["inputSchema"]?["required"] as JsonArray)?
-            .Select(v => v!.ToString()).ToHashSet(StringComparer.Ordinal)
-            ?? new HashSet<string>(StringComparer.Ordinal);
         var output = new StringBuilder();
-        output.AppendLine($"{Kebab(name)}  ({name})")
-            .AppendLine(tool["description"]?.ToString() ?? "")
-            .AppendLine().AppendLine($"Usage: godot-runtime-cli {Kebab(name)} [OPTIONS]")
+        output.AppendLine($"{Kebab(tool.Name)}  ({tool.Name})")
+            .AppendLine(tool.Description)
+            .AppendLine().AppendLine($"Usage: godot-runtime-cli {Kebab(tool.Name)} [OPTIONS]")
             .AppendLine().AppendLine("Options:");
-        foreach (var (key, def) in props)
+        var required = tool.InputSchema.Required?.ToHashSet(StringComparer.Ordinal) ?? [];
+        foreach (var (key, def) in tool.InputSchema.Properties)
         {
-            var type = def?["type"]?.ToString() ?? "JSON or text";
-            var flag = $"--{Kebab(key)}";
-            var requiredText = required.Contains(key) ? " (required)" : "";
-            output.AppendLine($"  {flag,-27} {type}{requiredText}")
-                .AppendLine($"    {def?["description"]?.ToString() ?? ""}");
+            var kind = def.Type ?? "JSON or text";
+            var flag = "--" + Kebab(key);
+            output.AppendLine($"  {flag,-27} {kind}{(required.Contains(key) ? " (required)" : "")}")
+                .AppendLine($"    {def.Description ?? ""}");
         }
         output.AppendLine("  --json OBJECT                  Optional JSON object (merged with named flags)")
             .AppendLine("  --help                         Show this tool's options");
-        if (props.Count > 0)
+        if (required.Count > 0)
         {
-            output.AppendLine().Append("Example: godot-runtime-cli ").Append(Kebab(name));
-            foreach (var (key, def) in props)
-                if (required.Contains(key))
-                    output.Append(" --").Append(Kebab(key)).Append(' ').Append(def?["type"]?.ToString() switch
-                    { "boolean" => "true", "integer" => "1", "array" => "'[]'", _ => "VALUE" });
+            output.AppendLine().Append($"Example: godot-runtime-cli {Kebab(tool.Name)}");
+            foreach (var key in required)
+                output.Append(" --").Append(Kebab(key)).Append(' ')
+                    .Append(tool.InputSchema.Properties[key].Type switch
+                    {
+                        "boolean" => "true", "integer" => "1", "array" => "'[]'", _ => "VALUE"
+                    });
             output.AppendLine();
         }
         return output.ToString();
@@ -72,21 +64,22 @@ public static class ToolCommandLine
 
     public static string CatalogText(ToolService service, string? search = null)
     {
-        var lines = new StringBuilder("Commands available offline (tool execution may require a running Godot instance):\n");
-        var matches = service.Catalog().OfType<JsonObject>()
+        var output = new StringBuilder("Commands available offline (tool execution may require running Godot):\n");
+        var matches = service.CatalogModels
             .Where(t => search == null ||
-                t["name"]!.ToString().Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                (t["description"]?.ToString() ?? "").Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                Kebab(t["name"]!.ToString()).Contains(search, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(t => t["name"]!.ToString(), StringComparer.Ordinal).ToList();
+                t.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                t.Description.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                Kebab(t.Name).Contains(search, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(t => t.Name, StringComparer.Ordinal)
+            .ToList();
         foreach (var tool in matches)
-            lines.Append("  ").Append(Kebab(tool["name"]!.ToString()).PadRight(28))
-                .AppendLine(tool["description"]?.ToString() ?? "");
-        lines.AppendLine($"\n{matches.Count} tool(s). Run 'godot-runtime-cli help TOOL' for typed flags.");
-        return lines.ToString();
+            output.Append("  ").Append(Kebab(tool.Name).PadRight(28))
+                .AppendLine(tool.Description);
+        output.AppendLine($"\n{matches.Count} tool(s). Run 'godot-runtime-cli help TOOL' for options.");
+        return output.ToString();
     }
 
-    private static JsonNode? Value(string raw, string? type, string name)
+    private static JsonNode? ParseValue(string raw, string? type, string name)
     {
         try
         {
@@ -111,51 +104,42 @@ public static class ToolCommandLine
                         return node;
                     break;
                 default:
-                    // Manifest values without a fixed type (e.g. set_property.value):
-                    // JSON literals are accepted; otherwise use unquoted strings.
+                    // Godot Variant cannot have a fixed schema; parse valid JSON literals,
+                    // otherwise preserve a bare argument as an ordinary string.
                     try { return JsonNode.Parse(raw); }
                     catch (JsonException) { return JsonValue.Create(raw); }
             }
         }
         catch (JsonException) { }
-        throw new ArgumentException($"Invalid --{Kebab(name)}: expected {type ?? "JSON or text"}, got '{raw}'.");
+        throw new ArgumentException($"Invalid --{Kebab(name)}: expected {type ?? "JSON or text"}");
     }
 
     public static JsonObject Parse(ToolService service, string command, IReadOnlyList<string> arguments)
     {
         var tool = Find(service, command) ??
             throw new ArgumentException($"Unknown tool '{command}'. Run 'godot-runtime-cli tools --search NAME'.");
-        var properties = Props(tool);
         var options = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
-        JsonObject values = new();
         for (var i = 0; i < arguments.Count; i++)
         {
             var token = arguments[i];
-            if (token is "--help" or "-h")
-                throw new ArgumentException("Use 'godot-runtime-cli help " + command + "' to view options.");
             if (!token.StartsWith("--", StringComparison.Ordinal))
-                throw new ArgumentException($"Unexpected positional value '{token}'. Use --parameter value. Run 'help {command}'.");
-
+                throw new ArgumentException($"Unexpected '{token}'. Expected --parameter value.");
             var part = token[2..];
             var equals = part.IndexOf('=');
             var name = equals < 0 ? part : part[..equals];
             var raw = equals < 0 ? null : part[(equals + 1)..];
             var negated = name.StartsWith("no-", StringComparison.Ordinal);
             if (negated) name = name[3..];
-            var matched = properties.Select(p => p.Key).FirstOrDefault(key =>
-                key == name || Kebab(key) == name || Canonical(name) == key);
-            var keyName = matched ?? (name is "project" or "instance" or "json" ? name : null);
-            if (keyName == null)
-                throw new ArgumentException($"Unknown option '--{name}' for {command}. Run 'godot-runtime-cli help {command}'.");
-            if (options.ContainsKey(keyName)) throw new ArgumentException($"Duplicate option '--{name}'");
-            var kind = keyName switch
-            {
-                "project" or "instance" => "string",
-                "json" => "object",
-                _ => properties[keyName]?["type"]?.ToString()
-            };
+            var key = tool.InputSchema.Properties.Keys.FirstOrDefault(k =>
+                k == name || Kebab(k) == name);
+            if (name == "json" && !negated) key = "json";
+            if (key is null)
+                throw new ArgumentException($"Unknown --{name} for {command}. Run 'help {command}'.");
+            if (options.ContainsKey(key))
+                throw new ArgumentException($"Duplicate --{name}");
+            var kind = key == "json" ? "object" : tool.InputSchema.Properties[key].Type;
             if (negated && kind != "boolean")
-                throw new ArgumentException($"--no-{name} is only valid for boolean flags");
+                throw new ArgumentException($"--no-{name} requires a boolean option");
             if (negated) raw = "false";
             else if (raw == null && kind == "boolean" &&
                 (i + 1 >= arguments.Count || arguments[i + 1].StartsWith("--", StringComparison.Ordinal)))
@@ -166,20 +150,20 @@ public static class ToolCommandLine
                     throw new ArgumentException($"Missing value for --{name}. Run 'help {command}'.");
                 raw = arguments[i];
             }
-            options.Add(keyName, Value(raw, kind, keyName));
+            options.Add(key, ParseValue(raw, kind, key));
         }
-        if (options.Remove("json", out var jsonArgs))
-            values = (JsonObject)jsonArgs!;
+
+        JsonObject values = options.Remove("json", out var rawJson)
+            ? (JsonObject)rawJson! : new JsonObject();
         foreach (var (name, value) in options)
             values[name] = value?.DeepClone();
 
-        foreach (var (name, _) in values)
-            if (!properties.ContainsKey(name))
-                throw new ArgumentException($"Unsupported argument '{name}' for {command}. Run 'help {command}'.");
-        foreach (var required in tool["inputSchema"]?["required"]?.AsArray() ?? new JsonArray())
-            if (required != null && (!values.ContainsKey(required.ToString()) || values[required.ToString()] == null))
-                throw new ArgumentException($"Missing required --{Kebab(required.ToString())}. Run 'godot-runtime-cli help {command}'.");
-
+        foreach (var key in values.Select(kv => kv.Key))
+            if (!tool.InputSchema.Properties.ContainsKey(key))
+                throw new ArgumentException($"Unsupported argument '{key}' for {command}");
+        foreach (var key in tool.InputSchema.Required ?? [])
+            if (!values.ContainsKey(key) || values[key] is null)
+                throw new ArgumentException($"Missing required --{Kebab(key)}");
         return values;
     }
 }

@@ -4,7 +4,7 @@
 
 ```text
 addons/godot_mcp/                 Godot 后端唯一规范源码/工具清单
-RuntimeHost/                      C# CLI / MCP / 实例发现 / 安装器
+RuntimeHost/                      System.CommandLine / 官方 MCP SDK / 强类型 DTO / 安装器
 Tests/                            无第三方测试框架的 C# 回归断言
 ExampleProject/                   可直接打开的 Godot .NET 集成示例
 skills/godot-runtime/SKILL.md     Agent 操作指南
@@ -47,3 +47,13 @@ godot --headless --path ExampleProject
 ## 兼容与历史
 
 从旧 Autoload `GodotMcpServer` 迁移时，安装器会检查并替换成 `GodotRuntimeBackend`，不会留两个自动加载实例；旧版有差异的插件必须显式 `--force` 更新。若游戏自身 C# 代码曾直接引用旧类名 `GodotMcpServer`，也需要改用 `GodotRuntimeBackend`。旧源码和文档仍可通过 Git 的 `v3.0.0` 标签查看，不在当前工作树保留 `Legacy/`。
+
+
+## 基础依赖（宿主）
+
+- `System.CommandLine` 2.0.11：CLI 子命令、帮助、选项类型与验证。
+- `ModelContextProtocol.AspNetCore` 2.2.0：官方 MCP SDK，包含 stdio 与 Streamable HTTP 传输；HTTP 使用 ASP.NET Core/Kestrel。
+- `System.Text.Json` + `RuntimeJsonContext`：AOT 源生成序列化；`ToolDefinition`、`BackendCallRequest`、`InstallResult` 等强类型 record。
+- `System.IO.Compression.ZipArchive`（BCL）：带路径校验的 ZIP 读取/打包；GitHub Release 元数据使用 `GithubRelease` record。
+
+**不要再自行解析 MCP JSON-RPC 或 HTTP 会话。** 项目采用官方 SDK；只在 Godot Variant 和自定义工具 JSON Schema 的边界操作 `JsonElement`/`JsonObject`。项目代码可做零警告常规构建；Native AOT 在 .NET 8 的 ASP.NET Core Framework Reference 内仍可能发出外部依赖裁剪分析提示（目前 IL2026/IL3053），并非自行忽略的安全保证。改动 Native AOT 依赖后必须真实发布、使用官方 MCP SDK 客户端运行测试。

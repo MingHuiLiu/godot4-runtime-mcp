@@ -2,7 +2,6 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace GodotRuntimeMcp;
@@ -21,7 +20,7 @@ public static class BackendInstaller
     private static readonly HttpClient DownloadClient = new()
     { Timeout = TimeSpan.FromSeconds(35) };
 
-    public static async Task<JsonNode> InstallAsync(string project, string source = "auto",
+    public static async Task<InstallResult> InstallAsync(string project, string source = "auto",
         string version = "latest", string? path = null, bool force = false)
     {
         project = RuntimeRegistry.Normalize(project);
@@ -74,8 +73,7 @@ public static class BackendInstaller
             {
                 if (updated != original) await AtomicWriteAsync(config, updated);
                 RuntimeRegistry.Remember(project);
-                return new JsonObject { ["status"] = "already-installed", ["project"] = project,
-                    ["origin"] = origin, ["files"] = files.Count };
+                return new InstallResult("already-installed", project, origin, files.Count);
             }
             if (!force)
                 throw new InvalidOperationException("Different addon already installed. Use --force to back it up and replace.");
@@ -118,17 +116,13 @@ public static class BackendInstaller
                 throw;
             }
             RuntimeRegistry.Remember(project);
-            return new JsonObject
-            {
-                ["status"] = "installed", ["project"] = project, ["origin"] = origin,
-                ["files"] = files.Count, ["backup"] = backup,
-                ["next"] = "Build the Godot C# project, then run each desired game process."
-            };
+            return new InstallResult("installed", project, origin, files.Count, backup,
+                "Build the Godot C# project, then run each desired game process.");
         }
         finally { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); }
     }
 
-    public static async Task<JsonNode> PackAsync(string source, string output)
+    public static async Task<PackResult> PackAsync(string source, string output)
     {
         var (files, _) = LocalFiles(source);
         var path = Path.GetFullPath(output);
@@ -144,11 +138,8 @@ public static class BackendInstaller
                 await writer.WriteAsync(content);
             }
         }
-        return new JsonObject
-        {
-            ["archive"] = path, ["files"] = files.Count,
-            ["release"] = "Upload this ZIP to a GitHub Release (no GitHub Actions required)."
-        };
+        return new PackResult(path, files.Count,
+            "Upload this ZIP to a GitHub Release (no GitHub Actions required).");
     }
 
     private static async Task AtomicWriteAsync(string file, string content)
@@ -296,25 +287,23 @@ public static class BackendInstaller
             ? $"https://api.github.com/repos/{Repository}/releases/latest"
             : $"https://api.github.com/repos/{Repository}/releases/tags/{version}";
         var data = await FetchAsync(url);
-        using var doc = JsonDocument.Parse(data);
-        var root = doc.RootElement;
-        if (root.TryGetProperty("assets", out var assets))
-            foreach (var asset in assets.EnumerateArray())
-            {
-                var name = asset.GetProperty("name").GetString() ?? "";
-                if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
-                    !(name.Contains("addon", StringComparison.OrdinalIgnoreCase) ||
-                      name.Contains("plugin", StringComparison.OrdinalIgnoreCase)))
-                    continue;
-                var download = asset.GetProperty("browser_download_url").GetString()
-                    ?? throw new InvalidOperationException("Missing Release asset URL");
-                if (!download.StartsWith($"https://github.com/{Repository}/releases/download/", StringComparison.Ordinal))
-                    throw new InvalidOperationException("Unexpected GitHub Release download URL");
-                return (await FetchAsync(download), download);
-            }
-        var tag = root.GetProperty("tag_name").GetString();
+        var release = JsonSerializer.Deserialize(data, RuntimeJsonContext.Default.GithubRelease)
+            ?? throw new InvalidOperationException("Invalid GitHub Release metadata");
+        foreach (var asset in release.Assets ?? [])
+        {
+            if (!asset.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+                !(asset.Name.Contains("addon", StringComparison.OrdinalIgnoreCase) ||
+                  asset.Name.Contains("plugin", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            var download = asset.BrowserDownloadUrl;
+            if (!download.StartsWith($"https://github.com/{Repository}/releases/download/",
+                    StringComparison.Ordinal))
+                throw new InvalidOperationException("Unexpected GitHub Release download URL");
+            return (await FetchAsync(download), download);
+        }
+        var tag = release.TagName;
         if (string.IsNullOrWhiteSpace(tag) || !Regex.IsMatch(tag, @"^[\w.\-]+$"))
-            throw new InvalidOperationException("Release contains neither plugin ZIP nor valid source tag");
+            throw new InvalidOperationException("Release contains neither addon ZIP nor valid source tag");
         var source = $"https://codeload.github.com/{Repository}/zip/refs/tags/{tag}";
         return (await FetchAsync(source), source);
     }
