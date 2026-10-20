@@ -156,7 +156,7 @@ public static class CommandLineApp
         AddSimple(root, "guide", "Offline installation and usage help",
             () => service.RunAsync("godot_setup_guide", new JsonObject()));
 
-        var toolsCmd = new Command("tools", "Search or print the 51 tools");
+        var toolsCmd = new Command("tools", "Search or print the 53 tools");
         var search = StringOption("search", "Filter tool names/descriptions");
         var asJson = BoolOption("json", "Print the raw MCP tool catalog as JSON");
         toolsCmd.Options.Add(search);

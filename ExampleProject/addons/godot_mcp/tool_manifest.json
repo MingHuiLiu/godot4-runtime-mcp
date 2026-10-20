@@ -846,5 +846,42 @@
         "nodePath"
       ]
     }
+  },
+  {
+    "name": "godot_snapshot_capture",
+    "description": "异步捕获完整可观察运行时场景树到持久化 Checkpoint",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rootPath": {
+          "type": "string",
+          "description": "可选，指定场景根节点的绝对 NodePath；默认 CurrentScene"
+        },
+        "strict": {
+          "type": "boolean",
+          "description": "严格捕获，默认为 true；缺失属性则报错"
+        },
+        "maxNodes": {
+          "type": "integer",
+          "description": "最多捕获节点数 1..2000，默认 2000"
+        }
+      }
+    }
+  },
+  {
+    "name": "godot_snapshot_job_status",
+    "description": "查询运行中 Godot 实例上的场景快照采集任务",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "description": "godot_snapshot_capture 返回的任务 ID"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
   }
 ]

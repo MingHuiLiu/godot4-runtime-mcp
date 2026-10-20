@@ -1,4 +1,5 @@
 using Godot;
+using GodotRuntimeMcp.Recording;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -65,12 +66,14 @@ public partial class GodotRuntimeBackend : Node
     // The backend owns Godot operations, not the MCP protocol or stdio transport.
     // Every running game registers an independent, authenticated loopback endpoint.
     private GodotRuntimeTransport? _transport;
+    private CaptureJobController? _capture;
 
     public override void _Ready()
     {
         if (_instance != null) { QueueFree(); return; }
         _instance = this;
         ProcessMode = ProcessModeEnum.Always;
+        _capture = new CaptureJobController(this);
         InitializeLogFile();
         InitializeSignalEventsFile();
         StartGlobalSignalMonitoring();
@@ -90,7 +93,11 @@ public partial class GodotRuntimeBackend : Node
         }
     }
 
-    public override void _Process(double delta) => _transport?.Pump(delta);
+    public override void _Process(double delta)
+    {
+        _transport?.Pump(delta);
+        _capture?.Pump();
+    }
 
     public override void _ExitTree()
     {
@@ -186,6 +193,12 @@ public partial class GodotRuntimeBackend : Node
                     GetLongOrNull(args, "startTime"),
                     GetLongOrNull(args, "endTime")),
                 "clear_signal_events" => ClearSignalEvents(),
+
+                // Runtime scene checkpoints
+                "godot_snapshot_capture" => Ok(_capture!.Start(
+                    GetStringOrNull(args, "rootPath"), GetBool(args, "strict", true),
+                    GetInt(args, "maxNodes", 2000))),
+                "godot_snapshot_job_status" => Ok(_capture!.GetStatus(GetString(args, "jobId"))),
 
                 // Debug
                 "get_logs" => GetLogs(GetInt(args, "count", 50)),

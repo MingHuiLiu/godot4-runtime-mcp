@@ -5,6 +5,9 @@ using System.Linq;
 
 public partial class SnapshotCaptureProbe : Node
 {
+    private CaptureJobController? _controller;
+    private string? _captureJobId;
+    private int _capturePollFrames;
     public override void _Ready()
     {
         try
@@ -68,6 +71,12 @@ public partial class SnapshotCaptureProbe : Node
             if (firstEnemyId == newEnemyId)
                 throw new Exception("Same node path reused snapshot node identity");
             GD.Print("SNAPSHOT_PROBE_PASS: owner-null topology, no live tree mutation, fresh node identity");
+            _controller = new CaptureJobController(this);
+            var started = _controller.Start(game.GetPath().ToString(), true, 2000);
+            if (started.Status != "pending") throw new Exception("Capture did not queue asynchronously");
+            var busy = _controller.Start(game.GetPath().ToString(), true, 2000);
+            if (busy.Code != "snapshot_busy") throw new Exception("Concurrent capture was not rejected");
+            _captureJobId = started.JobId;
         }
         catch (Exception e)
         {
@@ -75,6 +84,30 @@ public partial class SnapshotCaptureProbe : Node
             GetTree().Quit(1);
             return;
         }
-        GetTree().Quit(0);
+    }
+
+    public override void _Process(double delta)
+    {
+        if (_controller is null || _captureJobId is null) return;
+        _controller.Pump();
+        var status = _controller.GetStatus(_captureJobId);
+        if (status.Status == "failed")
+        {
+            GD.PushError("SNAPSHOT_JOB_FAIL: " + status.Code + ":" + status.Message);
+            GetTree().Quit(1);
+        }
+        if (status.Status == "completed")
+        {
+            string root = System.Environment.GetEnvironmentVariable("GODOT_MCP_CONFIG_DIR")!;
+            if (System.IO.Directory.GetFiles(root, "manifest.json", System.IO.SearchOption.AllDirectories).Length == 0)
+                throw new Exception("Completed capture lacks committed manifest");
+            GD.Print("SNAPSHOT_JOB_PASS: async capture persisted and returned completed status");
+            GetTree().Quit(0);
+        }
+        if (++_capturePollFrames > 240)
+        {
+            GD.PushError("SNAPSHOT_JOB_FAIL: capture timed out");
+            GetTree().Quit(1);
+        }
     }
 }
