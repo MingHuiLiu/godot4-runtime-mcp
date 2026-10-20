@@ -55,6 +55,31 @@ public partial class SnapshotCaptureProbe : Node
                 entered != 0 || exited != 0)
                 throw new Exception("Owner-null tree capture missed or mutated nodes");
 
+            var rebuilt = SnapshotSceneBuilder.Build(first, true);
+            try
+            {
+                var worldCopy = rebuilt.Root;
+                var copyPlayer = worldCopy.GetNode<CharacterBody2D>("Player");
+                var copyA = copyPlayer.GetNode<CollisionShape2D>("CollisionShape");
+                var copyB = copyPlayer.GetNode<CollisionShape2D>("CollisionTwin");
+                var copyProps = worldCopy.GetNode<SnapshotPropertyProbe>("PropertyProbe");
+                if (worldCopy.GetChildCount() != 3 || copyPlayer.Position != new Vector2(100,200) ||
+                    !ReferenceEquals(copyA.Shape, copyB.Shape) ||
+                    copyProps.Tags.Count != 2 || copyProps.Counts["beta"] != 2 ||
+                    copyProps.CustomResource is not SnapshotGraphResource copyR1 ||
+                    copyR1.Next is not SnapshotGraphResource copyR2 ||
+                    !ReferenceEquals(copyR2.Next, copyR1))
+                    throw new Exception("Restored scene lost structure, properties, or shared resources");
+                if (copyPlayer == player || copyA == collision || copyProps == propsNode)
+                    throw new Exception("Scene restore reused live nodes");
+                GD.Print("SNAPSHOT_REBUILD_PASS: independent tree and cyclic resource graph");
+            }
+            finally { rebuilt.Root.Free(); }
+            var missingResource = first with { Resources = first.Resources.Skip(1).ToList() };
+            bool missingRejected = false;
+            try { var partial = SnapshotSceneBuilder.Build(missingResource, true); partial.Root.Free(); }
+            catch (System.IO.InvalidDataException) { missingRejected = true; }
+            if (!missingRejected) throw new Exception("Strict scene restoration accepted missing resource");
             propsNode.BigText = new string('x', 300_000);
             bool rejected = false;
             try { SceneCheckpointCapture.Capture(game, "bad", "session", "project", "instance", true); }
