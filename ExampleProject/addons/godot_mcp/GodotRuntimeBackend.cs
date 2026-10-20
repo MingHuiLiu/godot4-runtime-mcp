@@ -70,6 +70,11 @@ public partial class GodotRuntimeBackend : Node
 
     public override void _Ready()
     {
+        if (System.Environment.GetEnvironmentVariable("GODOT_MCP_EXPORT_WORKER") == "1")
+        {
+            SetProcess(false);
+            return;
+        }
         if (_instance != null) { QueueFree(); return; }
         _instance = this;
         ProcessMode = ProcessModeEnum.Always;

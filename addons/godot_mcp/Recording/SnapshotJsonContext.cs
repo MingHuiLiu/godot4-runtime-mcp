@@ -15,4 +15,8 @@ namespace GodotRuntimeMcp.Recording;
 [JsonSerializable(typeof(List<CheckpointManifest>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(SnapshotJobInfo))]
+[JsonSerializable(typeof(SnapshotExportRequest))]
+[JsonSerializable(typeof(SceneExportDependencies))]
+[JsonSerializable(typeof(SceneExportResult))]
+[JsonSerializable(typeof(Dictionary<string, SnapshotValue>))]
 public partial class SnapshotJsonContext : JsonSerializerContext { }

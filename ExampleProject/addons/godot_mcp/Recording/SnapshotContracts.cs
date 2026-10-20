@@ -37,3 +37,10 @@ public static class SnapshotSchema
             throw new NotSupportedException($"unsupported_schema_version: {snapshot.SchemaVersion}");
     }
 }
+
+public sealed record SnapshotExportRequest(string SnapshotDirectory, string ExportDirectory, bool Strict);
+public sealed record SceneExportDependencies(List<string> Scripts, List<string> Resources);
+public sealed record SceneExportResult(
+    string Status, string? ScenePath, string? RuntimeStatePath, string? DependenciesPath,
+    string? ReportPath, string Quality, List<SnapshotIssue> Issues,
+    int NodeCount, int VerifiedNodeCount, string? Code = null, string? Message = null);

@@ -96,6 +96,10 @@ public partial class SnapshotCaptureProbe : Node
             if (firstEnemyId == newEnemyId)
                 throw new Exception("Same node path reused snapshot node identity");
             GD.Print("SNAPSHOT_PROBE_PASS: owner-null topology, no live tree mutation, fresh node identity");
+            // Godot's .tscn writer cannot always encode cyclic Resource graphs.
+            // Keep the cycle in the in-memory builder probe, but export a round-trippable
+            // scene in the separate end-to-end worker test.
+            propsNode.CustomResource = null;
             _controller = new CaptureJobController(this);
             var started = _controller.Start(game.GetPath().ToString(), true, 2000);
             if (started.Status != "pending") throw new Exception("Capture did not queue asynchronously");
