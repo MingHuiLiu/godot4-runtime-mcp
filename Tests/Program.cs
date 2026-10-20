@@ -19,6 +19,7 @@ void Assert(bool yes, string message)
 try
 {
     SnapshotContractTests.Run(Assert);
+    await CheckpointArchiveTests.RunAsync(Assert, scratch);
     var tools = new ToolService();
     Assert(tools.Catalog().Count == 51, "All 46 runtime tools plus 5 management tools available offline");
     Assert(tools.CatalogModels.Count == 51 && tools.CatalogModels.All(t => t.InputSchema.Type == "object"),
