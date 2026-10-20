@@ -38,8 +38,8 @@ godot --headless --path ExampleProject
 ## macOS Native AOT
 
 ```sh
-./scripts/publish-release.sh v3.1.0-dev osx-arm64
-./scripts/publish-release.sh v3.1.0-dev osx-x64
+./scripts/publish-release.sh v3.1.0 osx-arm64
+./scripts/publish-release.sh v3.1.0 osx-x64
 ```
 
 产物位于忽略 Git 的 `dist/TAG/`，包含 `godot-runtime-cli` 和 `godot-mcp-server` 两个独立可执行文件的 tar.gz、后端插件 ZIP 与 SHA256SUMS。Native AOT 原生输出已是单文件，**不要**同时设置 `PublishSingleFile=true`。构建和测试不会自动创建 GitHub Release。版本号统一由 `RuntimeHost/HostVersion.cs` 定义，打包脚本会拒绝与宿主实际版本不符的标签；正式发布前须去掉 `-dev` 并验证对应构建。
