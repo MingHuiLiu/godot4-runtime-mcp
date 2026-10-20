@@ -8,23 +8,19 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using FileAccess = Godot.FileAccess;
 
-// =========================================================================
-// GodotMcpServer — Unified MCP HTTP+SSE Server for AI Agent Integration
+// Godot Runtime MCP v3 backend.
+// A unique authenticated loopback endpoint belongs to each game process.
+// The separate Node.js MCP stdio service and CLI share this runtime backend.
+// Active endpoints: GET /health, GET /tools, POST /call.
+// Original tool implementations are preserved below. The embedded historical
+// SSE/MCP handlers remain for source compatibility but are NOT routed or exposed.
+// All scene mutations and queries execute from the Godot main-thread queue.
 //
-// Merges the functionality of the .NET McpServer console app and the
-// GodotPlugin into a single self-contained Godot addon.
-//
-// Transport: MCP over HTTP+SSE (Model Context Protocol spec)
-//   GET  /sse                — SSE endpoint for MCP session establishment
-//   POST /messages?session_id=X — MCP JSON-RPC message endpoint
-//   POST /api/<endpoint>     — Legacy HTTP API (backward compatible)
-//
-// No external .NET process needed. Runs directly inside Godot.
-// =========================================================================
-
 public partial class GodotMcpServer : Node
 {
     // ===================== Singleton =====================
@@ -37,8 +33,11 @@ public partial class GodotMcpServer : Node
     private const string McpServerName = "godot-mcp";
     private const string McpServerVersion = "2.0.0";
     private const string ProtocolVersion = "2024-11-05";
-    private const int HttpPort = 7777;
-    private const string BaseUrl = "http://127.0.0.1:7777/";
+    // Each game process owns a unique loopback port and a private discovery record.
+    private string _runtimeToken = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+    private readonly string _instanceId = Guid.NewGuid().ToString("N");
+    private string? _registryFile;
+    private int _runtimePort;
 
     // Logging constants
     private const int MaxLogBufferSize = 1000;
@@ -800,10 +799,10 @@ public partial class GodotMcpServer : Node
         StartGlobalSignalMonitoring();
 
         GD.Print("=".PadRight(60, '='));
-        GD.Print("[GodotMcp] Godot MCP v2.0 — Unified HTTP+SSE MCP Server");
-        GD.Print("[GodotMcp] Merged McpServer + GodotPlugin into one addon");
+        GD.Print("[GodotMcp] Runtime backend v3 — standalone MCP/CLI frontend");
+        GD.Print("[GodotMcp] Unique authenticated loopback HTTP per process");
         GD.Print("=".PadRight(60, '='));
-        GD.Print($"[GodotMcp] {_tools.Count + 1} MCP tools loaded");
+        GD.Print($"[GodotMcp] {_tools.Count} runtime tools loaded");
         GD.Print("[GodotMcp] ✓ Global signal monitoring started");
         GD.Print("[GodotMcp] ✓ Log auto-recording started");
 
@@ -835,6 +834,11 @@ public partial class GodotMcpServer : Node
 
         _httpListener?.Stop();
         _httpListener?.Close();
+        if (_registryFile != null)
+        {
+            try { System.IO.File.Delete(_registryFile); }
+            catch (Exception ex) { GD.PrintErr($"[GodotMcp] Registry cleanup failed: {ex.Message}"); }
+        }
         GD.Print("[GodotMcp] Server stopped");
     }
 
@@ -842,23 +846,112 @@ public partial class GodotMcpServer : Node
 
     private void StartServer()
     {
-        try
+        // Binding a unique loopback port is essential: two games (or two play sessions
+        // of the same game) must never race for a global fixed port.
+        for (var attempt = 0; attempt < 32; attempt++)
         {
-            _httpListener = new HttpListener();
-            _httpListener.Prefixes.Add(BaseUrl);
-            _httpListener.Start();
-            _isRunning = true;
-            GD.Print($"[GodotMcp] ✓ MCP HTTP+SSE server: {BaseUrl}");
-            GD.Print($"[GodotMcp]   SSE endpoint:  GET  /sse");
-            GD.Print($"[GodotMcp]   MCP endpoint:  POST /messages?session_id=...");
-            GD.Print($"[GodotMcp]   Legacy API:    POST /api/<endpoint>");
-            GD.Print($"[GodotMcp]   HTTP API:    POST /<endpoint>");
-            _ = Task.Run(HandleRequestsAsync);
+            HttpListener? candidate = null;
+            try
+            {
+                var probe = new TcpListener(IPAddress.Loopback, 0);
+                probe.Start();
+                var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+                probe.Stop();
+
+                candidate = new HttpListener();
+                candidate.Prefixes.Add($"http://127.0.0.1:{port}/");
+                candidate.Start();
+                _httpListener = candidate;
+                _runtimePort = port;
+                _isRunning = true;
+                RegisterInstance();
+                GD.Print($"[GodotMcp] Runtime { _instanceId } listening on 127.0.0.1:{port}");
+                _ = Task.Run(HandleRequestsAsync);
+                return;
+            }
+            catch (HttpListenerException)
+            {
+                candidate?.Close(); // race for the selected ephemeral port: retry
+            }
+            catch (Exception ex)
+            {
+                candidate?.Close();
+                _isRunning = false;
+                GD.PrintErr($"[GodotMcp] Runtime startup failed: {ex.Message}");
+                return;
+            }
         }
-        catch (Exception ex)
+        GD.PrintErr("[GodotMcp] Could not allocate an HTTP port after 32 attempts");
+    }
+
+    private void RegisterInstance()
+    {
+        var home = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+        var directory = Path.Combine(home, ".godot-runtime-mcp", "instances");
+        Directory.CreateDirectory(directory);
+        if (!OperatingSystem.IsWindows())
+            System.IO.File.SetUnixFileMode(directory,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        _registryFile = Path.Combine(directory, $"{_instanceId}.json");
+        var record = new
         {
-            GD.PrintErr($"[GodotMcp] ✗ Failed to start server: {ex.Message}");
+            protocol = 1,
+            id = _instanceId,
+            pid = System.Environment.ProcessId,
+            port = _runtimePort,
+            token = _runtimeToken,
+            projectPath = Path.GetFullPath(ProjectSettings.GlobalizePath("res://")),
+            projectName = (string)ProjectSettings.GetSetting("application/config/name", "Godot"),
+            startedAt = DateTimeOffset.UtcNow.ToString("O")
+        };
+        var temporary = _registryFile + ".tmp";
+        System.IO.File.WriteAllText(temporary, JsonSerializer.Serialize(record, JsonOptions));
+        if (!OperatingSystem.IsWindows())
+            System.IO.File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        System.IO.File.Move(temporary, _registryFile, true);
+    }
+
+    private static async Task SendJson(HttpListenerContext context, object result)
+    {
+        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(result, JsonOptions));
+        context.Response.ContentType = "application/json; charset=utf-8";
+        context.Response.ContentLength64 = bytes.Length;
+        await context.Response.OutputStream.WriteAsync(bytes);
+        context.Response.Close();
+    }
+
+    private async Task HandleDirectCall(HttpListenerContext context)
+    {
+        if (context.Request.ContentLength64 > 1048576)
+        {
+            context.Response.StatusCode = 413;
+            context.Response.Close();
+            return;
         }
+        using var reader = new StreamReader(context.Request.InputStream);
+        using var document = JsonDocument.Parse(await reader.ReadToEndAsync());
+        var root = document.RootElement;
+        var name = root.GetProperty("name").GetString() ?? "";
+        if (!_tools.Any(t => t.Name == name))
+        {
+            context.Response.StatusCode = 400;
+            await SendJson(context, ErrorResponse($"Unknown tool: {name}"));
+            return;
+        }
+        var args = root.TryGetProperty("arguments", out var jsonArgs)
+            ? DeserializeArgs(jsonArgs.GetRawText())
+            : new Dictionary<string, object>();
+        var pending = new PendingRequest
+        {
+            Type = "tool_call",
+            ToolName = name,
+            ToolArgs = args,
+            CompletionSource = new TaskCompletionSource<ApiResponse>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        lock (_queueLock) { _requestQueue.Enqueue(pending); }
+        var result = await pending.CompletionSource.Task;
+        await SendJson(context, result);
     }
 
     private async Task HandleRequestsAsync()
@@ -882,22 +975,28 @@ public partial class GodotMcpServer : Node
             var path = context.Request.Url?.AbsolutePath ?? "/";
             var method = context.Request.HttpMethod;
 
-            // Route requests
-            if (path == "/sse" && method == "GET")
+            // No unauthenticated API or HTTP MCP transport. The separate stdio MCP
+            // process and CLI share /call and /tools, authenticated per instance.
+            if (context.Request.RemoteEndPoint == null ||
+                !IPAddress.IsLoopback(context.Request.RemoteEndPoint.Address) ||
+                !string.Equals(context.Request.Headers["X-Godot-MCP-Token"], _runtimeToken,
+                    StringComparison.Ordinal))
             {
-                await HandleSseConnection(context);
+                context.Response.StatusCode = 403;
+                context.Response.Close();
+                return;
             }
-            else if (path == "/messages" && method == "POST")
-            {
-                await HandleMessagePost(context);
-            }
-            else if (method == "POST")
-            {
-                await HandleLegacyApi(context);
-            }
+            if (path == "/health" && method == "GET")
+                await SendJson(context, new { id = _instanceId, pid = System.Environment.ProcessId,
+                    port = _runtimePort, protocol = 1, tools = _tools.Count });
+            else if (path == "/tools" && method == "GET")
+                await SendJson(context, new { tools = _tools.Select(t => new {
+                    name = t.Name, description = t.Description, inputSchema = t.InputSchema }) });
+            else if (path == "/call" && method == "POST")
+                await HandleDirectCall(context);
             else
             {
-                context.Response.StatusCode = 405;
+                context.Response.StatusCode = 404;
                 context.Response.Close();
             }
         }

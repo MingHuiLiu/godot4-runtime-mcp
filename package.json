@@ -1,19 +1,20 @@
 {
-  "name": "godot-mcp-server",
-  "version": "1.0.0",
-  "description": "MCP server for Godot 4 C# runtime debugging and development",
-  "main": "index.js",
-  "scripts": {
-    "build": "cd McpServer && dotnet build",
-    "start": "cd McpServer && dotnet run"
+  "name": "godot-runtime-mcp",
+  "version": "3.0.0",
+  "description": "Godot 4 .NET runtime debugging via shared CLI and standalone MCP stdio",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "godot-mcp": "./bin/godot-mcp.js"
   },
-  "keywords": [
-    "mcp",
-    "godot",
-    "game-development",
-    "debugging",
-    "csharp"
-  ],
-  "author": "",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "tools:generate": "python3 scripts/generate-tools.py",
+    "pack": "node bin/godot-mcp.js pack",
+    "start": "node bin/godot-mcp.js mcp"
+  },
   "license": "MIT"
 }

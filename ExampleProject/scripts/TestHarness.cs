@@ -50,7 +50,7 @@ public partial class TestHarness : Node
         SetupSignalConnections();
 
         GD.Print("[TestHarness] Ready for MCP testing!");
-        GD.Print("[TestHarness] Server should be at http://127.0.0.1:7777/");
+        GD.Print("[TestHarness] Discover instances via godot-mcp instances");
     }
 
     private void CreateTestHierarchy()

@@ -18,3 +18,12 @@ data_*/
 # OS
 .DS_Store
 Thumbs.db
+
+# Release package / Python caches
+dist/
+__pycache__/
+
+# Keep the actual root CLI entrypoint
+!/bin/
+/bin/*
+!/bin/godot-mcp.js
