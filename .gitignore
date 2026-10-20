@@ -22,3 +22,7 @@ logs/
 dist/
 .DS_Store
 Thumbs.db
+
+# Isolated Superpowers execution workspaces
+.worktrees/
+.superpowers/
