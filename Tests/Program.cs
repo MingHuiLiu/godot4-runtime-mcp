@@ -20,6 +20,92 @@ try
 {
     var tools = new ToolService();
     Assert(tools.Catalog().Count == 51, "All 46 runtime tools plus 5 management tools available offline");
+    // Every MCP tool has the same direct, schema-driven CLI entrypoint.
+    Assert(tools.Catalog().All(t =>
+        ToolCommandLine.Resolve(tools, t!["name"]!.ToString().Replace('_', '-')) ==
+            t["name"]!.ToString()),
+        "All 51 MCP tools have direct kebab-case CLI commands");
+    var schemaFailures = new List<string>();
+    foreach (var tool in tools.Catalog().OfType<JsonObject>())
+    {
+        var name = tool["name"]!.ToString();
+        var props = tool["inputSchema"]?["properties"]?.AsObject() ?? new JsonObject();
+        var flags = new List<string>();
+        foreach (var (field, schema) in props)
+        {
+            var type = schema?["type"]?.ToString();
+            flags.Add("--" + field.Replace("_", "-").SelectMany(c =>
+                char.IsUpper(c) ? new[] { '-', char.ToLowerInvariant(c) } : new[] { c })
+                .Aggregate("", (acc, c) => acc + c));
+            flags.Add(type switch
+            {
+                "boolean" => "true",
+                "integer" => "2",
+                "number" => "1.5",
+                "array" => "[]",
+                "object" => "{}",
+                _ => "sample"
+            });
+        }
+        try
+        {
+            var parsed = ToolCommandLine.Parse(tools, name.Replace('_', '-'), flags);
+            if (parsed.Count != props.Count) schemaFailures.Add(name + ": incomplete flags");
+        }
+        catch (ArgumentException ex) { schemaFailures.Add(name + ": " + ex.Message); }
+    }
+    Assert(schemaFailures.Count == 0,
+        "All 51 CLI commands accept typed flags for every manifest property: " +
+            string.Join("; ", schemaFailures));
+    var cliHelp = ToolCommandLine.Describe(ToolCommandLine.Find(tools, "get-node-info")!);
+    Assert(cliHelp.Contains("--node-path") && cliHelp.Contains("(required)") &&
+        cliHelp.Contains("godot-runtime-cli get-node-info"),
+        "Per-tool CLI help displays required flags and examples");
+    var cliScene = ToolCommandLine.Parse(tools, "get-scene-tree-simple",
+        ["--max-depth", "2", "--root-path=/root", "--project", "/tmp/Game"]);
+    Assert(cliScene["maxDepth"]!.GetValue<long>() == 2 &&
+        cliScene["rootPath"]!.ToString() == "/root" &&
+        cliScene["project"]!.ToString() == "/tmp/Game",
+        "Typed integer, kebab-case flags and project selection");
+    var cliValue = ToolCommandLine.Parse(tools, "set-property",
+        ["--node-path", "/root/Main", "--property-name", "visible", "--value", "false"]);
+    Assert(cliValue["value"]!.GetValue<bool>() == false,
+        "Untyped Godot property values parse boolean JSON scalars");
+    var cliArray = ToolCommandLine.Parse(tools, "call-method",
+        ["--node-path", "/root/Main", "--method-name", "Test", "--args", "[1,true]"]);
+    Assert(cliArray["args"] is JsonArray array && array.Count == 2,
+        "Tool array-valued --args flag is distinct from legacy JSON payload");
+    var cliMerge = ToolCommandLine.Parse(tools, "get-node-info",
+        ["--json", "{\"nodePath\":\"/root/Old\"}", "--node-path", "/root/New"]);
+    Assert(cliMerge["nodePath"]!.ToString() == "/root/New",
+        "Named flags override optional JSON object payload");
+    var cliBoolean = ToolCommandLine.Parse(tools, "get-scene-tree",
+        ["--no-include-properties"]);
+    Assert(cliBoolean["includeProperties"]!.GetValue<bool>() == false,
+        "Negative boolean CLI flags are supported");
+    var cliValidationErrors = 0;
+    foreach (var invalid in new[]
+    {
+        new[] { "get-node-info" },
+        new[] { "get-node-info", "--node-path" },
+        new[] { "get-node-info", "--node-pat", "/root/Main" },
+        new[] { "get-scene-tree-simple", "--max-depth", "banana" },
+        new[] { "call-method", "--node-path", "/root/Main", "--method-name", "Test", "--args", "{}" }
+    })
+    {
+        try { ToolCommandLine.Parse(tools, invalid[0], invalid.Skip(1).ToArray()); }
+        catch (ArgumentException) { cliValidationErrors++; }
+    }
+    Assert(cliValidationErrors == 5,
+        "Direct CLI catches required flags, missing values, typos and type mismatches");
+    Assert(ToolCommandLine.CatalogText(tools, "node").Contains("get-node-info"),
+        "CLI tool catalog supports searchable human-readable commands");
+    var standaloneSkill = File.ReadAllText(Path.Combine(root, "skills", "godot-runtime", "SKILL.md"));
+    Assert(standaloneSkill.Contains("api.github.com/repos/") &&
+        standaloneSkill.Contains("godot-runtime-tools-$TAG-$RID.tar.gz") &&
+        standaloneSkill.Contains("shasum -a 256 -c") &&
+        standaloneSkill.Contains("godot-runtime-cli"),
+        "Single standalone Skill describes GitHub CLI bootstrap and checksum verification");
     var backendImplementation = File.ReadAllText(Path.Combine(root, "addons", "godot_mcp", "GodotRuntimeBackend.cs"));
     var missingDispatches = tools.Catalog().Take(46)
         .Select(t => t!["name"]!.ToString())

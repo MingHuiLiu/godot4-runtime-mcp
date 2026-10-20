@@ -7,7 +7,7 @@
 - `runtime_backend.tscn`：Godot 自动加载场景。
 - `tool_manifest.json`：46 个工具的唯一 Schema 定义（也会嵌入 C# 宿主）。
 
-通过 `godot-mcp install --project /path/to/game` 自动部署插件并写入：
+通过 `godot-runtime-cli install --project /path/to/game` 自动部署插件并写入：
 
 ```ini
 [autoload]

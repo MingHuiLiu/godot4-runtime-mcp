@@ -6,8 +6,8 @@
 dotnet build ExampleProject/ExampleProject.csproj
 godot --headless --path ExampleProject
 # 在另一个终端：
-./scripts/godot-mcp-dev.sh instances
-./scripts/godot-mcp-dev.sh call get_scene_tree_simple --project ExampleProject
+./scripts/godot-runtime-cli-dev.sh instances
+./scripts/godot-runtime-cli-dev.sh call get_scene_tree_simple --project ExampleProject
 ```
 
 若同时运行两个演示游戏进程，最后一条调用必须补充 `--instance ID`，否则宿主应拒绝模糊目标。详细说明请见 [架构](../docs/architecture.md)。

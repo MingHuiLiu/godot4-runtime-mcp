@@ -186,7 +186,7 @@ public static class RuntimeRegistry
             choices = choices.Where(e => e.InstanceId.StartsWith(instance, StringComparison.Ordinal)).ToList();
         if (choices.Count == 0)
             throw new InvalidOperationException("Godot backend offline/not installed for selected target. " +
-                "Use 'godot-mcp install --project PATH', build the C# project and run the game. " +
+                "Use 'godot-runtime-cli install --project PATH', build the C# project and run the game. " +
                 "Offline setup, tool discovery and installation remain available.");
         if (choices.Count != 1)
             throw new InvalidOperationException("Multiple matching instances: " +

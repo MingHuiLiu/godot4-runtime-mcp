@@ -114,12 +114,12 @@ public sealed class ToolService
             return new JsonObject
             {
                 ["offline"] = "CLI and MCP tool discovery/installation do not require any running Godot game.",
-                ["install"] = "godot-mcp install --project /path/to/game",
-                ["localInstall"] = "godot-mcp install --project /path/to/game --source local --path .",
+                ["install"] = "godot-runtime-cli install --project /path/to/game",
+                ["localInstall"] = "godot-runtime-cli install --project /path/to/game --source local --path .",
                 ["build"] = "Use Godot 4 .NET and build the game's C# project with dotnet build.",
                 ["runtime"] = "Launch one or more games. Each binds a unique loopback port; use instances to select.",
-                ["mcp"] = "godot-mcp-server (native release binary), or godot-mcp mcp",
-                ["cli"] = "godot-mcp call get_scene_tree_simple --project /path/to/game --instance ID",
+                ["mcp"] = "godot-mcp-server (native release binary), or godot-runtime-cli mcp",
+                ["cli"] = "godot-runtime-cli get-scene-tree-simple --project /path/to/game --instance ID",
                 ["releases"] = "https://github.com/MingHuiLiu/godot4-runtime-mcp/releases"
             };
         if (name == "godot_install_backend")

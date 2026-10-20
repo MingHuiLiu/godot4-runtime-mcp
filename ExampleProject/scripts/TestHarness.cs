@@ -50,7 +50,7 @@ public partial class TestHarness : Node
         SetupSignalConnections();
 
         GD.Print("[TestHarness] Ready for MCP testing!");
-        GD.Print("[TestHarness] Use godot-mcp instances to discover this game process.");
+        GD.Print("[TestHarness] Use godot-runtime-cli instances to discover this game process.");
     }
 
     private void CreateTestHierarchy()

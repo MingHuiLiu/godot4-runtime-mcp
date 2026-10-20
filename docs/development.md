@@ -8,7 +8,7 @@ RuntimeHost/                      C# CLI / MCP / 实例发现 / 安装器
 Tests/                            无第三方测试框架的 C# 回归断言
 ExampleProject/                   可直接打开的 Godot .NET 集成示例
 skills/godot-runtime/SKILL.md     Agent 操作指南
-scripts/godot-mcp-dev.sh          **需要 SDK** 的源码开发启动器
+scripts/godot-runtime-cli-dev.sh          **需要 SDK** 的源码开发启动器
 scripts/sync-example-addon.sh     同步规范插件到示例项目
 scripts/publish-release.sh        构建 macOS Native AOT 发行包
 start-mcp-bridge.sh               兼容老 MCP 配置的开发入口
@@ -22,14 +22,14 @@ docs/                             当前架构、集成、开发及历史发布�
 ```sh
 dotnet build Godot-Mcp.sln -c Release
 dotnet run --project Tests/Tests.csproj -c Release
-./scripts/godot-mcp-dev.sh status
-./scripts/godot-mcp-dev.sh pack --path . --out /tmp/godot-mcp-addon.zip
+./scripts/godot-runtime-cli-dev.sh status
+./scripts/godot-runtime-cli-dev.sh pack --path . --out /tmp/godot-runtime-addon.zip
 dotnet build ExampleProject/ExampleProject.csproj
 # 具体 Godot 可执行文件位置因机器而异
 godot --headless --path ExampleProject
 ```
 
-验证多实例：同时启动两份示例进程，用 `./scripts/godot-mcp-dev.sh instances` 查看各自的 `instanceId`，并按 `--project`、`--instance` 指向具体进程。没有明确目标时不应该让运行时调用成功。
+验证多实例：同时启动两份示例进程，用 `./scripts/godot-runtime-cli-dev.sh instances` 查看各自的 `instanceId`，并按 `--project`、`--instance` 指向具体进程。没有明确目标时不应该让运行时调用成功。
 
 ## 修改工具
 
@@ -42,7 +42,7 @@ godot --headless --path ExampleProject
 ./scripts/publish-release.sh v3.1.0-dev osx-x64
 ```
 
-产物位于忽略 Git 的 `dist/TAG/`，包含两个独立可执行文件的 tar.gz、后端插件 ZIP 与 SHA256SUMS。Native AOT 原生输出已是单文件，**不要**同时设置 `PublishSingleFile=true`。构建和测试不会自动创建 GitHub Release。版本号统一由 `RuntimeHost/HostVersion.cs` 定义，打包脚本会拒绝与宿主实际版本不符的标签；正式发布前须去掉 `-dev` 并验证对应构建。
+产物位于忽略 Git 的 `dist/TAG/`，包含 `godot-runtime-cli` 和 `godot-mcp-server` 两个独立可执行文件的 tar.gz、后端插件 ZIP 与 SHA256SUMS。Native AOT 原生输出已是单文件，**不要**同时设置 `PublishSingleFile=true`。构建和测试不会自动创建 GitHub Release。版本号统一由 `RuntimeHost/HostVersion.cs` 定义，打包脚本会拒绝与宿主实际版本不符的标签；正式发布前须去掉 `-dev` 并验证对应构建。
 
 ## 兼容与历史
 

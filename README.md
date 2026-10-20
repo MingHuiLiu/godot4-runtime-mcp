@@ -13,22 +13,40 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `godot-mcp-vTAG-osx-arm64.tar.gz` | Apple Silicon CLI + MCP Server（两个独立 AOT 可执行文件） |
-| `godot-mcp-vTAG-osx-x64.tar.gz` | Intel Mac CLI + MCP Server |
-| `godot-mcp-addon-vTAG.zip` | Godot C# 插件（可由 CLI 自动安装） |
+| `godot-runtime-tools-vTAG-osx-arm64.tar.gz` | Apple Silicon CLI + MCP Server（两个独立 AOT 可执行文件） |
+| `godot-runtime-tools-vTAG-osx-x64.tar.gz` | Intel Mac CLI + MCP Server |
+| `godot-runtime-addon-vTAG.zip` | Godot C# 插件（可由 CLI 自动安装） |
 | `SHA256SUMS.txt` | SHA-256 校验信息 |
 
 将对应 tar.gz 解压后直接使用：
 
 ```sh
-./godot-mcp status
-./godot-mcp install --project /absolute/path/to/your/godot-dotnet-game
+./godot-runtime-cli status
+./godot-runtime-cli install --project /absolute/path/to/your/godot-dotnet-game
 # 编译目标游戏的 C# csproj，然后启动 Godot 游戏
-./godot-mcp instances
-./godot-mcp call get_scene_tree_simple --project /absolute/path/to/your/godot-dotnet-game --instance INSTANCE_ID
+./godot-runtime-cli instances
+./godot-runtime-cli get-scene-tree-simple --project /absolute/path/to/your/godot-dotnet-game --instance INSTANCE_ID
 ```
 
 Agent 的 MCP 配置中，令 `command` 指向解压后的 `godot-mcp-server` **绝对路径**，无需添加 `mcp` 参数。没有运行中的游戏时，MCP 初始化、工具清单、项目查询及插件安装依然可用。
+
+### 只有一份 Skill 文档也可开始
+
+[独立 Agent Skill](skills/godot-runtime/SKILL.md) 已包含 macOS ARM64/x64 自动识别、从官方 GitHub Release 下载 CLI + MCP Server、校验 SHA256 和安装到 `~/.local/bin/` 的**完整内嵌 shell 指令**。它不依赖仓库检出、脚本、Python 或 .NET SDK。只有 SKILL.md 的 Agent 也能按照文档完成安装；但**必须有真正发布的 Release 附件**，仅有 Git tag 不足以下载 AOT 二进制。当前不提供未经构建测试的 Linux/Windows AOT 产物。
+
+### 所有工具都有直接命令
+
+CLI 直接从 46 个运行时工具及 5 个管理工具的统一 Schema 生成参数，无需手写 `call TOOL --args JSON`：
+
+```sh
+godot-runtime-cli tools --search node
+godot-runtime-cli help get-node-info
+godot-runtime-cli get-node-info --node-path /root/Main/Player --project /path/to/game --instance ID
+godot-runtime-cli set-property --node-path /root/Main/Player --property-name visible --value false --project /path/to/game
+godot-runtime-cli get-scene-tree-simple --max-depth 2 --project /path/to/game
+```
+
+同时支持 `snake_case` 名称、`--include-properties` / `--no-include-properties` 布尔开关、`--args '[1,2]'` 这类工具专属数组参数、`--json '{...}'` 原始请求对象，以及向后兼容的 `call TOOL --args '{...}'` 形式。 `tools --json` 输出完整 MCP 工具清单，`help TOOL` 显示对应必填参数和类型。
 
 ### 从仓库源码开发
 
@@ -36,9 +54,9 @@ Agent 的 MCP 配置中，令 `command` 指向解压后的 `godot-mcp-server` **
 
 ```sh
 dotnet build Godot-Mcp.sln -c Release
-./scripts/godot-mcp-dev.sh status
-./scripts/godot-mcp-dev.sh install --project /path/to/game --source local --path .
-./scripts/godot-mcp-dev.sh mcp
+./scripts/godot-runtime-cli-dev.sh status
+./scripts/godot-runtime-cli-dev.sh install --project /path/to/game --source local --path .
+./scripts/godot-runtime-cli-dev.sh mcp
 ```
 
 源码启动器需要本地 .NET 8 SDK。旧的 `start-mcp-bridge.sh` 仅为已有 MCP 配置保留的**兼容入口**，实际启动的是独立 C# MCP 宿主，没有 Python 桥接器。
