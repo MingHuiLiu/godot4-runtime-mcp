@@ -1,31 +1,19 @@
 ---
 name: godot-runtime-mcp
-description: C# CLI and MCP tools for Godot 4 .NET. Automatically install the backend from GitHub Releases or the bundled source even if Godot is not installed/running.
+description: Godot 4 .NET runtime inspection/control through the C# CLI and standalone MCP server; support offline installation and multiple instances.
 ---
 
-# Godot Runtime MCP — C# Agent Skill
+# Godot Runtime MCP — Agent Skill
 
-**Do not assume a game or plugin is running.** Do not use the legacy fixed port 7777, Python bridge, Node, Docker, or GitHub Actions. Both CLI and MCP are implemented in C#.
+The Godot plugin is **not** an MCP protocol server. The independent C# host serves CLI, stdio MCP, and optional localhost HTTP. Use the native release executable `godot-mcp`, or from a source checkout `./scripts/godot-mcp-dev.sh` (requires .NET SDK).
 
-## Offline-first workflow
+## Workflow
 
-1. Run `./bin/godot-mcp status` to list known projects and running instances. No Godot needed.
-2. Run `./bin/godot-mcp tools` to discover 46 Godot runtime tools + 5 management tools offline.
-3. If the addon is missing, run `./bin/godot-mcp install --project /absolute/path/to/project`. The **C# CLI first downloads the addon from GitHub Releases** (https://github.com/MingHuiLiu/godot4-runtime-mcp/releases). If no latest Release exists or GitHub is unavailable, it automatically installs the **bundled compatible C# backend**.
-4. Offline source alternative: `./bin/godot-mcp install --project /path/to/project --source local --path /path/to/repository`. A strict published version: `--source release --version TAG`. For existing changed addon, explicitly add `--force` (previous files are backed up outside the game tree).
-5. Build the Godot 4 **.NET C#** game's csproj (`dotnet build /path/to/game/Game.csproj`), then launch the game. Installer registers `GodotMcpServer` Autoload. Pure GDScript games need a .NET C# project before the runtime backend can work.
-6. Run `./bin/godot-mcp instances`. Each **process** has its own `projectPath`, `instanceId`, `pid`, and loopback port.
-7. Call `./bin/godot-mcp call get_scene_tree_simple --project /path/to/project --instance INSTANCE_ID --args '{"maxDepth":2}'`.
+1. `godot-mcp status` and `godot-mcp tools` work even if Godot is not running (46 runtime + 5 management tools).
+2. Install if needed: `godot-mcp install --project /absolute/path/to/game`. Default auto source tries GitHub Releases, then the compatible embedded C# backend when Releases/network are unavailable. Local alternative: `--source local --path /path/to/addon.zip`. A changed install requires explicit `--force` (backup is created).
+3. The target game must use Godot 4 **.NET C#**. Build the project's C# csproj and launch the game; installer registers `GodotRuntimeBackend` Autoload.
+4. `godot-mcp instances` lists running projects and per-process instance IDs. Never guess a PID or port.
+5. `godot-mcp call get_scene_tree_simple --project /absolute/path/to/game --instance INSTANCE_ID --args '{"maxDepth":2}'` targets an exact instance.
+6. Configure an MCP client `command` with the absolute path of the native `godot-mcp-server` executable (no arguments), or the source development compatibility shim `start-mcp-bridge.sh`.
 
-**Multiple projects and multiple game processes:** never select an arbitrary port or process. If routing is ambiguous, list instances and explicitly specify `--project` and `--instance`.
-
-## MCP mode without Godot
-
-Use `/absolute/path/to/Godot-Mcp/start-mcp-bridge.sh` in a standard stdio MCP configuration (or `dotnet /path/to/GodotRuntimeMcp.dll mcp`). The C# MCP host will answer `initialize`, `tools/list`, and these always-available management tools without any backend:
-
-- `godot_status`, `godot_list_projects`, `godot_list_instances`, `godot_setup_guide`.
-- **`godot_install_backend`**: e.g. `{"project":"/path/to/game","source":"auto"}`.
-
-All runtime tools accept optional `project` and `instance`. If Godot is stopped, runtime tools return an MCP `isError: true` with a useful explanation, never a false positive.
-
-`execute_csharp` is a legacy Roslyn placeholder and is unavailable; do not claim to have executed C#. Mutating runtime tools may affect game state; make sure the selected instance is intentional. Read `README.md` for full architecture and installation details.
+Offline MCP management tools: `godot_status`, `godot_list_projects`, `godot_list_instances`, `godot_setup_guide`, `godot_install_backend`. Runtime tools require a real running game. On multiple matches, supply `project` and `instance` to avoid controlling the wrong process. `execute_csharp` is unsupported (no Roslyn); do not claim arbitrary C# was executed. Mutating operations affect live game state; use only with trusted local agents.

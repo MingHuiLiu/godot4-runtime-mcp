@@ -1,28 +1,24 @@
-bin/
-obj/
+# C# build output
+**/bin/
+**/obj/
 *.user
 *.suo
 .vs/
 .vscode/
 .idea/
 
-# Godot
+# Godot generated/imported data
+.godot/
+.mono/
 .import/
 *.import
+data_*/
 export.cfg
 export_presets.cfg
-.mono/
-data_*/
-.godot/
 
-# OS
+# Logs, native release builds, system files
+*.log
+logs/
+dist/
 .DS_Store
 Thumbs.db
-
-# Keep the C# CLI launcher under the repository root tracked; ignore build output.
-!/bin/
-/bin/*
-!/bin/godot-mcp
-
-# Native AOT release artifacts (never commit binaries)
-dist/

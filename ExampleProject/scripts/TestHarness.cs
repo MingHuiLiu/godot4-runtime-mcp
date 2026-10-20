@@ -37,7 +37,7 @@ public partial class TestHarness : Node
     public override void _Ready()
     {
         GD.Print("=".PadRight(60, '='));
-        GD.Print("[TestHarness] Godot MCP Test Project v2.0");
+        GD.Print("[TestHarness] Godot Runtime MCP integration example");
         GD.Print("=".PadRight(60, '='));
 
         // Create a rich test node hierarchy

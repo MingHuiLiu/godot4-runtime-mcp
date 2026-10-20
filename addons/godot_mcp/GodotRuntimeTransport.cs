@@ -94,7 +94,7 @@ internal sealed class GodotRuntimeTransport : IDisposable
                 $"runtime-{_pid}-{_instanceId}.json");
             WriteRegistry();
             _ = Task.Run(AcceptLoop);
-            Console.Error.WriteLine($"[GodotMcp] Runtime: http://127.0.0.1:{_port} project={_projectPath} instance={_instanceId}");
+            Console.Error.WriteLine($"[GodotRuntime] Runtime: http://127.0.0.1:{_port} project={_projectPath} instance={_instanceId}");
         }
         catch
         {
@@ -156,7 +156,7 @@ internal sealed class GodotRuntimeTransport : IDisposable
         {
             _lastHeartbeat = 0;
             try { WriteRegistry(); }
-            catch (Exception ex) { Console.Error.WriteLine($"[GodotMcp] Registry heartbeat failed: {ex.Message}"); }
+            catch (Exception ex) { Console.Error.WriteLine($"[GodotRuntime] Registry heartbeat failed: {ex.Message}"); }
         }
         for (var i = 0; i < MaxPerFrame; i++)
         {
@@ -183,7 +183,7 @@ internal sealed class GodotRuntimeTransport : IDisposable
             }
             catch (HttpListenerException) { if (_disposed) break; }
             catch (ObjectDisposedException) { break; }
-            catch (Exception ex) { Console.Error.WriteLine($"[GodotMcp] Accept: {ex.Message}"); }
+            catch (Exception ex) { Console.Error.WriteLine($"[GodotRuntime] Accept: {ex.Message}"); }
         }
     }
 

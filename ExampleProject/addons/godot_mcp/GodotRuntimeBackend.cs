@@ -12,17 +12,17 @@ using System.Threading.Tasks;
 using FileAccess = Godot.FileAccess;
 
 // =========================================================================
-// GodotMcpServer — Godot operations exposed through per-process runtime transport
+// GodotRuntimeBackend — Godot operations exposed through per-process runtime transport
 //
 // MCP and CLI live outside the engine; all Godot access runs on the main thread.
 // =========================================================================
 
-public partial class GodotMcpServer : Node
+public partial class GodotRuntimeBackend : Node
 {
     // ===================== Singleton =====================
 
-    private static GodotMcpServer? _instance;
-    public static GodotMcpServer? Instance => _instance;
+    private static GodotRuntimeBackend? _instance;
+    public static GodotRuntimeBackend? Instance => _instance;
 
     // ===================== Constants =====================
 
@@ -84,7 +84,7 @@ public partial class GodotMcpServer : Node
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"[GodotMcp] Cannot start runtime backend: {ex}");
+            GD.PrintErr($"[GodotRuntime] Cannot start runtime backend: {ex}");
             _transport?.Dispose();
             _transport = null;
         }
@@ -1412,7 +1412,7 @@ public partial class GodotMcpServer : Node
     private void LogInfo(string message)
     {
         AddLog("info", message);
-        GD.Print($"[GodotMcp] {message}");
+        GD.Print($"[GodotRuntime] {message}");
     }
 
     private void AddLog(string level, string message)

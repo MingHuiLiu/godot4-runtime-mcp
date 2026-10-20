@@ -20,7 +20,7 @@ try
 {
     var tools = new ToolService();
     Assert(tools.Catalog().Count == 51, "All 46 runtime tools plus 5 management tools available offline");
-    var backendImplementation = File.ReadAllText(Path.Combine(root, "addons", "godot_mcp", "GodotMcpServer.cs"));
+    var backendImplementation = File.ReadAllText(Path.Combine(root, "addons", "godot_mcp", "GodotRuntimeBackend.cs"));
     var missingDispatches = tools.Catalog().Take(46)
         .Select(t => t!["name"]!.ToString())
         .Where(name => !backendImplementation.Contains("\"" + name + "\" =>", StringComparison.Ordinal))
@@ -62,14 +62,38 @@ try
     Assert(JsonSerializer.Serialize(installed).Contains("\"status\":\"installed\""),
         "Install from local C# backend source into project with no running Godot");
     var settings = await File.ReadAllTextAsync(Path.Combine(a, "project.godot"));
-    Assert(settings.Contains("GodotMcpServer=\"*res://addons/godot_mcp/mcp_server.tscn\""),
+    Assert(settings.Contains("GodotRuntimeBackend=\"*res://addons/godot_mcp/runtime_backend.tscn\""),
         "Installer registers Godot autoload");
     var again = await BackendInstaller.InstallAsync(a, "local", path: source);
     Assert(JsonSerializer.Serialize(again).Contains("already-installed"),
         "Installation is idempotent");
     Assert((await File.ReadAllTextAsync(Path.Combine(a, "project.godot")))
-        .Split("GodotMcpServer=", StringSplitOptions.None).Length == 2,
+        .Split("GodotRuntimeBackend=", StringSplitOptions.None).Length == 2,
         "Autoload registration is not duplicated");
+
+    // The example is a standalone Godot project with a checked-in addon copy.
+    // Guard against drifting from the canonical backend used by releases.
+    var canonical = Path.Combine(root, "addons", "godot_mcp");
+    var bundledExample = Path.Combine(root, "ExampleProject", "addons", "godot_mcp");
+    var canonicalFiles = Directory.GetFiles(canonical).Select(Path.GetFileName).Order().ToArray();
+    var exampleFiles = Directory.GetFiles(bundledExample)
+        .Where(path => !path.EndsWith(".uid", StringComparison.Ordinal))
+        .Select(Path.GetFileName).Order().ToArray();
+    Assert(canonicalFiles.SequenceEqual(exampleFiles) &&
+        canonicalFiles.All(name => File.ReadAllBytes(Path.Combine(canonical, name!))
+            .AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(bundledExample, name!)))),
+        "Standalone Godot example addon matches canonical release backend");
+
+    // Old v3 autoload should be migrated instead of creating two live backends.
+    var legacyProject = Path.Combine(scratch, "legacy-autoload");
+    Directory.CreateDirectory(legacyProject);
+    await File.WriteAllTextAsync(Path.Combine(legacyProject, "project.godot"),
+        "[autoload]\nGodotMcpServer=\"*res://addons/godot_mcp/mcp_server.tscn\"\n");
+    await BackendInstaller.InstallAsync(legacyProject, "local", path: root);
+    var upgradedConfig = File.ReadAllText(Path.Combine(legacyProject, "project.godot"));
+    Assert(upgradedConfig.Contains("\nGodotRuntimeBackend=\"*res://addons/godot_mcp/runtime_backend.tscn\"") &&
+        !upgradedConfig.Contains("GodotMcpServer="),
+        "Installer migrates old Autoload name without duplicate runtime");
 
     var zip = Path.Combine(scratch, "release-addon.zip");
     await BackendInstaller.PackAsync(source, zip);
@@ -87,7 +111,7 @@ try
         "C# backend installs from release-format ZIP");
     Assert(File.Exists(Path.Combine(b, "addons", "godot_mcp", "tool_manifest.json")),
         "Installer packages the shared tool manifest with the Godot backend");
-    Assert(RuntimeRegistry.Projects().Count == 2, "Multiple projects tracked while offline");
+    Assert(RuntimeRegistry.Projects().Count == 3, "Multiple projects tracked while offline");
     var parallelProjects = Enumerable.Range(1, 8).Select(i =>
     {
         var folder = Path.Combine(scratch, "parallel-" + i);
@@ -96,7 +120,7 @@ try
         return folder;
     }).ToArray();
     await Task.WhenAll(parallelProjects.Select(p => Task.Run(() => RuntimeRegistry.Remember(p))));
-    Assert(RuntimeRegistry.Projects().Count == 10,
+    Assert(RuntimeRegistry.Projects().Count == 11,
         "Concurrent C# registrations preserve all project records");
     Directory.CreateDirectory(RuntimeRegistry.Root);
     var fakeName = Path.Combine(RuntimeRegistry.Root,

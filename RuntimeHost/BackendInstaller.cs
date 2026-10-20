@@ -15,8 +15,8 @@ public static class BackendInstaller
     private const int MaxFiles = 150;
     private static readonly HashSet<string> Required = new(StringComparer.Ordinal)
     {
-        "GodotMcpServer.cs",
-        "GodotRuntimeTransport.cs", "mcp_server.tscn", "tool_manifest.json"
+        "GodotRuntimeBackend.cs",
+        "GodotRuntimeTransport.cs", "runtime_backend.tscn", "tool_manifest.json"
     };
     private static readonly HttpClient DownloadClient = new()
     { Timeout = TimeSpan.FromSeconds(35) };
@@ -195,7 +195,9 @@ public static class BackendInstaller
 
     private static string EnsureAutoload(string settings)
     {
-        const string entry = "GodotMcpServer=\"*res://addons/godot_mcp/mcp_server.tscn\"";
+        const string entry = "GodotRuntimeBackend=\"*res://addons/godot_mcp/runtime_backend.tscn\"";
+        const string oldPath = "\"*res://addons/godot_mcp/mcp_server.tscn\"";
+        const string newPath = "\"*res://addons/godot_mcp/runtime_backend.tscn\"";
         var section = Regex.Match(settings, @"(?m)^\[autoload\]\s*$");
         if (!section.Success)
             return settings.TrimEnd() + "\n\n[autoload]\n" + entry + "\n";
@@ -203,14 +205,21 @@ public static class BackendInstaller
         var next = Regex.Match(settings[(section.Index + section.Length)..], @"(?m)^\[[^\]]+\]\s*$");
         var end = next.Success ? section.Index + section.Length + next.Index : settings.Length;
         var body = settings[(section.Index + section.Length)..end];
-        var existing = Regex.Match(body, @"(?m)^\s*GodotMcpServer\s*=\s*(.+)$");
-        if (existing.Success)
+        var old = Regex.Match(body, @"(?m)^[ \t]*GodotMcpServer[ \t]*=[ \t]*(.+)$");
+        var current = Regex.Match(body, @"(?m)^[ \t]*GodotRuntimeBackend[ \t]*=[ \t]*(.+)$");
+        if (current.Success && current.Groups[1].Value.Trim() != newPath)
+            throw new InvalidOperationException("Conflicting GodotRuntimeBackend autoload");
+        if (old.Success && old.Groups[1].Value.Trim() != oldPath)
+            throw new InvalidOperationException("Conflicting legacy GodotMcpServer autoload");
+        if (old.Success && current.Success)
+            throw new InvalidOperationException("Duplicate legacy and current Godot runtime autoloads");
+        if (old.Success)
         {
-            if (existing.Groups[1].Value.Trim() !=
-                "\"*res://addons/godot_mcp/mcp_server.tscn\"")
-                throw new InvalidOperationException("Conflicting GodotMcpServer autoload in project.godot");
-            return settings;
+            // Upgrade the previous runtime autoload entry rather than installing two.
+            var absolute = section.Index + section.Length + old.Index;
+            return settings[..absolute] + entry + settings[(absolute + old.Length)..];
         }
+        if (current.Success) return settings;
         return settings[..end].TrimEnd() + "\n" + entry + "\n\n" + settings[end..];
     }
 
@@ -240,7 +249,7 @@ public static class BackendInstaller
         var candidates = new[] { Path.Combine(root, "addons", "godot_mcp"),
             Path.Combine(root, "godot_mcp"), root };
         foreach (var candidate in candidates)
-            if (File.Exists(Path.Combine(candidate, "GodotMcpServer.cs")))
+            if (File.Exists(Path.Combine(candidate, "GodotRuntimeBackend.cs")))
             {
                 var result = LocalDirectoryFiles(candidate);
                 Validate(result);
@@ -315,7 +324,7 @@ public static class BackendInstaller
         if (!url.StartsWith("https://", StringComparison.Ordinal))
             throw new InvalidOperationException("HTTPS required for downloads");
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd("GodotRuntimeMcp/3.0");
+        request.Headers.UserAgent.ParseAdd("GodotRuntimeMcp/" + HostVersion.Current);
         using var response = await DownloadClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength > MaxDownload)

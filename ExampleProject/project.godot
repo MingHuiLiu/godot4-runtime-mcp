@@ -1,12 +1,12 @@
 [application]
-config/name="GodotMCP"
+config/name="Godot Runtime MCP Example"
 config/features=PackedStringArray("4.7","C#")
 run/main_scene="res://Main.tscn"
 [rendering]
 renderer/rendering_method="gl_compatibility"
 
 [autoload]
-GodotMcpServer="*res://addons/godot_mcp/mcp_server.tscn"
+GodotRuntimeBackend="*res://addons/godot_mcp/runtime_backend.tscn"
 
 [dotnet]
 project/assembly_name="ExampleProject"

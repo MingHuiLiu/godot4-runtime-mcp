@@ -195,7 +195,7 @@ public sealed class McpProtocol(ToolService tools)
                         },
                         ["serverInfo"] = new JsonObject
                         {
-                            ["name"] = "godot-runtime-mcp", ["version"] = "3.0.0"
+                            ["name"] = "godot-runtime-mcp", ["version"] = HostVersion.Current
                         }
                     });
                 }

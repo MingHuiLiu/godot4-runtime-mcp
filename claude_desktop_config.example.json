@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "godot-runtime-mcp": {
-      "command": "/ABSOLUTE/PATH/TO/Godot-Mcp/start-mcp-bridge.sh",
+    "godot-runtime": {
+      "command": "/absolute/path/to/godot-mcp-server",
       "args": []
     }
   }

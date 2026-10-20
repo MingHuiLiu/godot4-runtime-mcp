@@ -1,13 +1,19 @@
-# Godot Runtime MCP v3 — C# Backend
+# Godot C# Runtime Backend
 
-This is the **single** Godot runtime backend used by the independent C# MCP server, CLI, and Agent Skills.
+`addons/godot_mcp/` 是规范的 Godot 4 .NET 插件目录：
 
-- `GodotMcpServer.cs`: 46 Godot operations, executed on the game's main thread.
-- `GodotRuntimeTransport.cs`: unique per-process local HTTP listener, private token, instance registry and bounded request queue.
-- `mcp_server.tscn`: Godot autoload scene.
+- `GodotRuntimeBackend.cs`：46 项运行时工具分发、节点、资源、信号、日志等 Godot 操作。
+- `GodotRuntimeTransport.cs`：每个游戏进程独立监听的本机 HTTP 接口、随机认证 Token、运行时注册和主线程队列。
+- `runtime_backend.tscn`：Godot 自动加载场景。
+- `tool_manifest.json`：46 个工具的唯一 Schema 定义（也会嵌入 C# 宿主）。
 
-Install with `./bin/godot-mcp install --project /absolute/path/to/game` (from the repository) or MCP `godot_install_backend`. The installer writes `[autoload] GodotMcpServer="*res://addons/godot_mcp/mcp_server.tscn"` into the game's `project.godot`.
+通过 `godot-mcp install --project /path/to/game` 自动部署插件并写入：
 
-Build and launch the **Godot 4 .NET** game. No EditorPlugin registration or global port 7777 is required; multiple games/processes may run concurrently. Discover active instances with `godot-mcp instances` and call using `--project` and `--instance`. Management and installation tools work even without the backend running.
+```ini
+[autoload]
+GodotRuntimeBackend="*res://addons/godot_mcp/runtime_backend.tscn"
+```
 
-The historical `execute_csharp` tool has no Roslyn implementation and must report unsupported.
+安装器可以识别并迁移旧的 `GodotMcpServer` Autoload；不要在一个项目中同时注册两个后端。安装完毕后编译并启动目标 **Godot 4 .NET C#** 游戏。CLI/MCP Server 是另一独立进程，**不在**插件里运行 MCP 协议服务或固定端口 7777。
+
+程序启动和退出时自动登记/注销实例；多个项目和同项目多个运行进程互相隔离。 `execute_csharp` 为明确不支持的旧接口，并未捆绑 Roslyn。

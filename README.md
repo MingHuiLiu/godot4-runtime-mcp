@@ -1,123 +1,65 @@
-# Godot Runtime MCP v3 — C# / .NET 8
+# Godot Runtime MCP
 
-**同一 Godot C# 运行时后端、独立 C# MCP Server、C# CLI 和 Agent Skills。** 不使用 Python/Node.js 作为实现，不需要 Docker、GitHub Actions 或安装额外软件。运行时需要 Godot 4 .NET；**Release 的 Native AOT CLI/MCP 二进制无需 .NET SDK/运行时**（仓库内源码开发仍使用 .NET SDK）。
+**Godot 4 .NET 的 C# 运行时调试工具：一个 Godot Backend，同时服务于独立的 MCP Server、CLI 和 Agent Skills。**
 
-## 架构
+- 46 项 Godot 运行时操作与 5 项离线管理工具；未启动 Godot 也能发现工具和安装插件。
+- 每个游戏进程拥有独立的随机本机端口、实例 ID 与 Bearer Token；支持多项目、多进程。
+- CLI 与 MCP stdio/HTTP 均调用同一 C# ToolService；Godot 主线程负责真实操作。
+- macOS Release 可使用原生 Native AOT 二进制，不要求客户端机器安装 .NET；**Godot 游戏仍必须使用 .NET 版 Godot 并编译 C#**。
 
-```text
-AI Agent ─ MCP stdio ─┐
-AI Agent ─ MCP HTTP ──┼── RuntimeHost (.NET 8, standalone)
-Agent Skills ─ CLI ───┘       │ ToolService (one tool implementation)
-                              │
-                     RuntimeRegistry (discovery and routing)
-                              │
-                      ┌───────┴──────────┐
-                   Project A           Project B
-                 ┌────┴────┐              │
-                PID 1     PID 2          PID 3
-                port1     port2          port3
-                Godot C# backend (authenticated local HTTP)
-                Godot main thread: 46 runtime operations
+## 下载与启动
+
+[GitHub Releases](https://github.com/MingHuiLiu/godot4-runtime-mcp/releases) 发布以下类型的文件（**标签不等于已创建 Release**）：
+
+| 文件 | 内容 |
+| --- | --- |
+| `godot-mcp-vTAG-osx-arm64.tar.gz` | Apple Silicon CLI + MCP Server（两个独立 AOT 可执行文件） |
+| `godot-mcp-vTAG-osx-x64.tar.gz` | Intel Mac CLI + MCP Server |
+| `godot-mcp-addon-vTAG.zip` | Godot C# 插件（可由 CLI 自动安装） |
+| `SHA256SUMS.txt` | SHA-256 校验信息 |
+
+将对应 tar.gz 解压后直接使用：
+
+```sh
+./godot-mcp status
+./godot-mcp install --project /absolute/path/to/your/godot-dotnet-game
+# 编译目标游戏的 C# csproj，然后启动 Godot 游戏
+./godot-mcp instances
+./godot-mcp call get_scene_tree_simple --project /absolute/path/to/your/godot-dotnet-game --instance INSTANCE_ID
 ```
 
-**核心保证：**
+Agent 的 MCP 配置中，令 `command` 指向解压后的 `godot-mcp-server` **绝对路径**，无需添加 `mcp` 参数。没有运行中的游戏时，MCP 初始化、工具清单、项目查询及插件安装依然可用。
 
-- Godot 每个进程独立申请回环端口、生成 256-bit 令牌与 instanceId，注册 PID + 项目绝对路径；无固定 7777 端口，无进程冲突。
-- 独立的 `RuntimeHost/` 同时提供 MCP stdio、MCP HTTP（可选）以及 CLI；**Godot 不启动或插件未安装时也能初始化 MCP、列出 51 个工具和安装后端**。
-- 多进程时自动拒绝模糊目标；运行时工具的 `project` 和 `instance` 用于路由，不会盲目控制其他游戏。
-- CLI **先尝试 GitHub Releases**；最新 Release 404/网络不可达时使用 **C# 可执行程序集内嵌的相同后端版本**，无需已有插件。指定 release 标签的安装不会回退。用户可以选择本地仓库或插件 ZIP。
-- 安装后自动写 `project.godot` 的 `[autoload]`，必要时补齐已有 C# 项目的程序集名称；不再依赖导致游戏程序集加载问题的 EditorPlugin 类。全部调用由 Godot 主线程队列执行。
-- 强制覆盖会备份原插件到用户配置目录（不放在会被 Godot C# 编译的 `addons` 下）；ZIP 路径检查，服务监听 loopback，Bearer 认证。
+### 从仓库源码开发
 
-## 直接下载 Native AOT 可执行文件（无需 .NET）
+源码启动器的名称特意包含 `dev`，避免与无需 .NET 的 AOT 可执行文件混淆：
 
-在 [v3.0.0 Release](https://github.com/MingHuiLiu/godot4-runtime-mcp/releases/tag/v3.0.0) 下载与你的 Mac 相符的 `godot-mcp-v3.0.0-osx-arm64.tar.gz`（Apple Silicon）或 `godot-mcp-v3.0.0-osx-x64.tar.gz`（Intel），解压后获得两个**各自独立的单文件可执行程序**：
-
-- `godot-mcp`：CLI，使用 `./godot-mcp status`、`./godot-mcp install --project /path/to/game`、`./godot-mcp instances`。
-- `godot-mcp-server`：MCP stdio，**无需参数**，将完整路径设置为 Agent 的 MCP command。也可以用 `godot-mcp mcp`。
-- `godot-mcp-addon-v3.0.0.zip`：Godot C# 后端源码插件；建议使用 CLI install 自动下载和配置 project.godot。手动复制 ZIP 中的 `addons/godot_mcp` 还需配置 Autoload。
-- `SHA256SUMS.txt`：下载后使用 `shasum -a 256 -c SHA256SUMS.txt` 核对包完整性。
-
-Native AOT **自身即生成单文件原生可执行文件**，不与 `PublishSingleFile` 同时使用。复现构建：`scripts/publish-release.sh v3.0.0 osx-arm64`（或 `osx-x64`）。本机编译脚本只支持 macOS 双架构，未宣称支持未经构建验证的 Linux/Windows AOT。macOS 首次下载的程序可能触发系统的未公证应用警告；请只从官方 Release 下载并核对 SHA256。
-
-## 使用 CLI
-
-在仓库根目录（已有 .NET SDK）：
-
-```bash
-dotnet build RuntimeHost/RuntimeHost.csproj -c Release
-./bin/godot-mcp status
-./bin/godot-mcp tools
-./bin/godot-mcp install --project /absolute/path/to/game
-dotnet build /absolute/path/to/game/Game.csproj
-./bin/godot-mcp instances
-./bin/godot-mcp call get_scene_tree_simple --project /absolute/path/to/game --instance INSTANCE_ID --args '{"maxDepth":2}'
+```sh
+dotnet build Godot-Mcp.sln -c Release
+./scripts/godot-mcp-dev.sh status
+./scripts/godot-mcp-dev.sh install --project /path/to/game --source local --path .
+./scripts/godot-mcp-dev.sh mcp
 ```
 
-不联网，从当前仓库直接安装：
+源码启动器需要本地 .NET 8 SDK。旧的 `start-mcp-bridge.sh` 仅为已有 MCP 配置保留的**兼容入口**，实际启动的是独立 C# MCP 宿主，没有 Python 桥接器。
 
-```bash
-./bin/godot-mcp install --project /path/to/game --source local --path .
-```
+## 安装与隔离
 
-强制安装新插件（旧插件将备份，非必要不使用）：
+安装器优先下载 GitHub Release 插件 ZIP；Release 不可用时，默认 `--source auto` 会使用**已内嵌到 C# 宿主的后端源码**。也可明确指定 `--source release --version TAG`、`--source github`，或 `--source local --path /path/to/addon.zip`。
 
-```bash
-./bin/godot-mcp install --project /path/to/game --force
-```
+安装器校验归档、更新 `project.godot` 的 `GodotRuntimeBackend` Autoload，迁移以前的 `GodotMcpServer` Autoload；已有不同插件不会被覆盖，除非显式提供 `--force`（旧文件会备份）。
 
-安装过程不启动 Godot，不安装 .NET SDK 或其他软件。**若目标游戏没有 C# csproj，必须先在 Godot 4 .NET 编辑器内创建 C# 项目**；纯 GDScript 运行时无法执行 C# 后端。构建后运行游戏进程才可以使用场景树、属性、信号和性能等实时工具。
+`project` 指向 Godot 项目；一个项目内存在多个运行中实例时，必须进一步指定 `instance`，避免操作错误的游戏进程。所有网络接口只允许本机访问，不是面向公网的远程管理服务。
 
-## MCP stdio / HTTP
+## 文档导航
 
-Claude Desktop 配置：
+- [架构与数据流](docs/architecture.md) — 模块职责、实例路由、线程模型及安全边界
+- [集成指南](docs/integration.md) — MCP stdio、HTTP、CLI 与安装示例
+- [开发与验证](docs/development.md) — 目录说明、示例、构建、回归测试和打包
+- [Godot 后端](addons/godot_mcp/README.md) / [集成示例](ExampleProject/README.md)
+- [Agent Skill](skills/godot-runtime/SKILL.md)
+- [v3.0.0 历史发布说明](docs/releases/v3.0.0.md)
 
-```json
-{
-  "mcpServers": {
-    "godot-runtime": {
-      "command": "/absolute/path/to/Godot-Mcp/start-mcp-bridge.sh",
-      "args": []
-    }
-  }
-}
-```
+## 已知边界
 
-`start-mcp-bridge.sh` 只负责启动 C# 程序；也可以直接运行 `dotnet RuntimeHost/bin/Release/net8.0/GodotRuntimeMcp.dll mcp --project /path/to/game`。即使没有运行的 Godot 实例，MCP `initialize`、`tools/list`、`ping` 以及以下管理工具仍正常工作。
-
-MCP 额外 5 工具：`godot_status`、`godot_list_instances`、`godot_list_projects`、`godot_setup_guide`、**`godot_install_backend`**。安装工具示例参数：`{"project":"/path/to/game","source":"auto"}`。
-
-可选常驻 HTTP：
-
-```bash
-./bin/godot-mcp serve --port 18777 --token LOCAL_SECRET
-```
-
-仅 `127.0.0.1:18777/mcp` 的 **stateless Streamable HTTP POST JSON-RPC**；要求 `Authorization: Bearer LOCAL_SECRET`，不提供 GET SSE。默认生成随机 token 并只显示在 stderr。普通桌面 Agent 建议优先使用 stdio。
-
-## Releases / Skills
-
-项目 [Releases](https://github.com/MingHuiLiu/godot4-runtime-mcp/releases) 提供原生 CLI/MCP 和 Godot 插件 ZIP。也可以直接通过 C# CLI 生成手动发布包，无需 Actions：
-
-```bash
-./bin/godot-mcp pack --path . --out godot-mcp-addon.zip
-```
-
-`--source auto` 优先下载 Release 中名字包含 addon/plugin 的 ZIP，否则使用对应 Release 标签源码 ZIP。如果 Release 不存在/网络不可达，则使用与 CLI 一起编译和分发的内嵌后端。明确使用 `--source release --version vX.Y` 会严格检查该版本，不会安装未验证的旧 GitHub main 分支代码。
-
-Agent Skills 详细指导：`skills/godot-runtime/SKILL.md`（也同步在 `AGENT_SKILL.md`）。
-
-## 测试
-
-```bash
-dotnet build RuntimeHost/RuntimeHost.csproj
-dotnet run --project Tests/Tests.csproj
-dotnet build ExampleProject/ExampleProject.csproj
-/Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path ExampleProject
-```
-
-已使用本机 Godot 4.7 .NET 验证实际进程：同项目两进程独立端口、实例发现、模糊目标拒绝、指定实例读取场景树、未认证请求 401。独立 C# Tests 覆盖离线 MCP/CLI、安装、升级备份、ZIP、安全检查。
-
-**注意**：`execute_csharp` 是历史占位能力，没有捆绑 Roslyn，不执行任何 C# 代码；必须按“不支持”处理。不要把带修改能力的 API 暴露给不可信的本机用户。此实现不支持远程跨机器调用，同一 OS 用户可读取自己进程的注册表令牌。
-
-历史 `McpServer/`、`GodotPlugin/` 和大量旧文档描述的是过时架构，不再作为 v3 入口，旧固定端口协议不兼容新版本。
+`execute_csharp` 保留了旧接口名称，但不含 Roslyn，调用会明确返回不支持；本项目不提供任意 C# 代码执行。MCP HTTP 为本机认证 JSON-RPC POST（不支持 GET/SSE 流），优先使用 stdio。Release 二进制未经过 Apple 公证；请从可信来源获取并校验 SHA-256。运行时操作会修改真实游戏状态，只对可信 Agent 开放。

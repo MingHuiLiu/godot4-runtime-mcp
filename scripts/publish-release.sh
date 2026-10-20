@@ -3,7 +3,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-TAG=${1:-v3.0.0}
+TAG=${1:?Usage: scripts/publish-release.sh TAG [osx-arm64|osx-x64]}
 RID=${2:-osx-arm64}
 case "$TAG" in
   *[!a-zA-Z0-9._-]*|'') echo "Invalid release tag" >&2; exit 2 ;;
@@ -29,6 +29,14 @@ mkdir -p "$PUBLISH" "$STAGE"
   -c Release -r "$RID" --self-contained true \
   -p:PublishAot=true -p:StripSymbols=true -p:DebugType=none \
   -p:TreatWarningsAsErrors=true -o "$PUBLISH"
+
+# Refuse misleading tags: never label a 3.1.0-dev executable as v3.1.0.
+EXPECTED_VERSION=${TAG#v}
+ACTUAL_VERSION=$("$PUBLISH/GodotRuntimeMcp" version)
+case "$ACTUAL_VERSION" in
+  "godot-runtime-mcp $EXPECTED_VERSION ("*) ;;
+  *) echo "Release tag $TAG does not match native executable version: $ACTUAL_VERSION" >&2; exit 2 ;;
+esac
 
 cp "$PUBLISH/GodotRuntimeMcp" "$STAGE/godot-mcp"
 cp "$PUBLISH/GodotRuntimeMcp" "$STAGE/godot-mcp-server"

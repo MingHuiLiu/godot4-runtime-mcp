@@ -27,7 +27,7 @@ internal static class Cli
             }
             if (args[0] is "--version" or "version")
             {
-                Console.WriteLine("godot-runtime-mcp 3.0.0 (C#/.NET 8)");
+                Console.WriteLine($"godot-runtime-mcp {HostVersion.Current} (C#/.NET 8)");
                 return 0;
             }
             var command = args[0];
@@ -137,8 +137,8 @@ internal static class Cli
           mcp [--project PATH] [--instance ID]   MCP stdio, standalone C# process
           serve [--port 18777] [--token SECRET]  Optional local Streamable HTTP MCP
 
-        The install command prefers GitHub Releases. Because the repository currently
-        has no published Releases, 'auto' falls back to GitHub main source (latest only).
+        Install prefers GitHub Releases; the auto mode uses the embedded
+        matching C# backend when a latest Release cannot be downloaded.
         If a project has multiple live game processes, --instance is mandatory.
         Neither Godot nor a running plugin is required to start MCP, list tools or install.
         """);
