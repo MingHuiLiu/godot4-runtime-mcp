@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AssemblyName>GodotRuntimeMcp</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../addons/godot_mcp/**/*.*">
+      <LogicalName>godot_addon/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>

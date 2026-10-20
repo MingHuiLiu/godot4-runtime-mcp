@@ -29,10 +29,10 @@ public partial class TestHarness : Node
 
     private int _counter;
     private readonly List<string> _eventLog = new();
-    private Node2D _playerNode;
-    private Sprite2D _spriteNode;
-    private Label _statusLabel;
-    private Godot.Timer _signalEmitter;
+    private Node2D _playerNode = null!;
+    private Sprite2D _spriteNode = null!;
+    private Label _statusLabel = null!;
+    private Godot.Timer _signalEmitter = null!;
 
     public override void _Ready()
     {
@@ -50,7 +50,7 @@ public partial class TestHarness : Node
         SetupSignalConnections();
 
         GD.Print("[TestHarness] Ready for MCP testing!");
-        GD.Print("[TestHarness] Server should be at http://127.0.0.1:7777/");
+        GD.Print("[TestHarness] Use godot-mcp instances to discover this game process.");
     }
 
     private void CreateTestHierarchy()

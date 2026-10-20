@@ -12,33 +12,20 @@ using System.Threading.Tasks;
 using FileAccess = Godot.FileAccess;
 
 // =========================================================================
-// GodotMcpServer — Unified MCP HTTP+SSE Server for AI Agent Integration
+// GodotMcpServer — Godot operations exposed through per-process runtime transport
 //
-// Merges the functionality of the .NET McpServer console app and the
-// GodotPlugin into a single self-contained Godot addon.
-//
-// Transport: MCP over HTTP+SSE (Model Context Protocol spec)
-//   GET  /sse                — SSE endpoint for MCP session establishment
-//   POST /messages?session_id=X — MCP JSON-RPC message endpoint
-//   POST /api/<endpoint>     — Legacy HTTP API (backward compatible)
-//
-// No external .NET process needed. Runs directly inside Godot.
+// MCP and CLI live outside the engine; all Godot access runs on the main thread.
 // =========================================================================
 
 public partial class GodotMcpServer : Node
 {
     // ===================== Singleton =====================
 
-    private static GodotMcpServer _instance;
-    public static GodotMcpServer Instance => _instance;
+    private static GodotMcpServer? _instance;
+    public static GodotMcpServer? Instance => _instance;
 
     // ===================== Constants =====================
 
-    private const string McpServerName = "godot-mcp";
-    private const string McpServerVersion = "2.0.0";
-    private const string ProtocolVersion = "2024-11-05";
-    private const int HttpPort = 7777;
-    private const string BaseUrl = "http://127.0.0.1:7777/";
 
     // Logging constants
     private const int MaxLogBufferSize = 1000;
@@ -59,17 +46,6 @@ public partial class GodotMcpServer : Node
 
     // ===================== State =====================
 
-    private HttpListener _httpListener;
-    private bool _isRunning;
-
-    // SSE connections: sessionId -> SseConnection
-    private readonly Dictionary<string, SseConnection> _sseConnections = new();
-    private readonly object _sseLock = new();
-
-    // Thread-safe request queue (for main-thread Godot operations)
-    private readonly Queue<PendingRequest> _requestQueue = new();
-    private readonly object _queueLock = new();
-
     // Logging
     private readonly LinkedList<LogEntry> _logBuffer = new();
     private readonly List<LogEntry> _logs = new(); // backward compat
@@ -79,1268 +55,51 @@ public partial class GodotMcpServer : Node
     private bool _isGlobalSignalMonitoring;
     private readonly HashSet<string> _monitoredSignals = new();
 
-    // ===================== Tool Definitions =====================
-
-    private static readonly List<McpToolDef> _tools = new()
+    // Single canonical tool catalog shared with the C# MCP / CLI service.
+    private static object LoadToolManifest()
     {
-        // --- Scene Tree ---
-        new McpToolDef
-        {
-            Name = "get_scene_tree",
-            Description = "获取当前场景树完整结构",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["includeProperties"] = new Dictionary<string, object>
-                    {
-                        ["type"] = "boolean",
-                        ["description"] = "是否包含节点属性"
-                    }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_scene_tree_simple",
-            Description = "获取场景树简化结构（仅名称和类型，用于快速浏览）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["rootPath"] = new Dictionary<string, object>
-                    {
-                        ["type"] = "string",
-                        ["description"] = "根节点路径，默认 /root"
-                    },
-                    ["maxDepth"] = new Dictionary<string, object>
-                    {
-                        ["type"] = "integer",
-                        ["description"] = "最大深度，默认 3"
-                    }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_node_info",
-            Description = "获取指定节点的详细信息（属性、方法、信号、子节点）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object>
-                    {
-                        ["type"] = "string",
-                        ["description"] = "节点路径，例如 /root/Main/Player"
-                    }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "create_node",
-            Description = "创建新节点",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["parentPath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "父节点路径" },
-                    ["nodeType"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点类型，如 Node2D, Sprite2D" },
-                    ["nodeName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "新节点名称" }
-                },
-                ["required"] = new List<string> { "parentPath", "nodeType", "nodeName" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "delete_node",
-            Description = "删除节点",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "要删除的节点路径" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "load_scene",
-            Description = "加载场景文件",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["scenePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "场景文件路径，如 res://scenes/level1.tscn" }
-                },
-                ["required"] = new List<string> { "scenePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_node_children",
-            Description = "获取节点的直接子节点列表（不递归，轻量级）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_node_parent",
-            Description = "获取节点的父节点路径",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "find_nodes_by_type",
-            Description = "查找指定类型的所有节点",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodeType"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点类型，如 Sprite2D, Camera2D" },
-                    ["rootPath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "搜索根路径，默认 /root" }
-                },
-                ["required"] = new List<string> { "nodeType" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "find_nodes_by_name",
-            Description = "按名称搜索节点（支持模糊匹配）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["namePattern"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点名称或名称片段" },
-                    ["rootPath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "搜索根路径，默认 /root" },
-                    ["caseSensitive"] = new Dictionary<string, object> { ["type"] = "boolean", ["description"] = "是否区分大小写" },
-                    ["exactMatch"] = new Dictionary<string, object> { ["type"] = "boolean", ["description"] = "是否精确匹配" }
-                },
-                ["required"] = new List<string> { "namePattern" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "find_nodes_by_group",
-            Description = "按组名查找节点",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["groupName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "组名" },
-                    ["rootPath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "搜索根路径，默认 /root" }
-                },
-                ["required"] = new List<string> { "groupName" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_node_ancestors",
-            Description = "获取节点的祖先路径（向上追溯多层）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" },
-                    ["levels"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "向上追溯层数，-1=追溯到根" },
-                    ["includeSiblings"] = new Dictionary<string, object> { ["type"] = "boolean", ["description"] = "是否包含兄弟节点" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_scene_tree_stats",
-            Description = "获取场景树统计信息（节点数量、类型分布等）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["rootPath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "统计根路径，默认 /root" }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "node_exists",
-            Description = "检查节点是否存在",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_node_subtree",
-            Description = "获取节点的子树（指定深度，避免完整树太大）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" },
-                    ["maxDepth"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "递归深度，默认 2" },
-                    ["includeProperties"] = new Dictionary<string, object> { ["type"] = "boolean", ["description"] = "是否包含属性" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "search_nodes",
-            Description = "智能搜索节点（组合多个条件）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["namePattern"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "名称模糊匹配（可选）" },
-                    ["nodeType"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点类型（可选）" },
-                    ["groupName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "组名（可选）" },
-                    ["rootPath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "搜索根路径" },
-                    ["maxResults"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "最大返回结果数" }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_node_context",
-            Description = "获取节点的上下文信息（父节点、兄弟节点、子节点）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" },
-                    ["includeParent"] = new Dictionary<string, object> { ["type"] = "boolean", ["description"] = "是否包含父节点" },
-                    ["includeSiblings"] = new Dictionary<string, object> { ["type"] = "boolean", ["description"] = "是否包含兄弟节点" },
-                    ["includeChildren"] = new Dictionary<string, object> { ["type"] = "boolean", ["description"] = "是否包含子节点" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
+        var json = FileAccess.GetFileAsString("res://addons/godot_mcp/tool_manifest.json");
+        return JsonSerializer.Deserialize<JsonElement>(json);
+    }
 
-        // --- Properties ---
-        new McpToolDef
-        {
-            Name = "get_property",
-            Description = "获取节点属性值",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" },
-                    ["propertyName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "属性名称，如 position, visible" }
-                },
-                ["required"] = new List<string> { "nodePath", "propertyName" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "set_property",
-            Description = "设置节点属性值",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" },
-                    ["propertyName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "属性名称" },
-                    ["value"] = new Dictionary<string, object> { ["type"] = "object", ["description"] = "属性值" }
-                },
-                ["required"] = new List<string> { "nodePath", "propertyName", "value" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "list_properties",
-            Description = "列出节点所有属性",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-
-        // --- Methods ---
-        new McpToolDef
-        {
-            Name = "call_method",
-            Description = "调用节点方法",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" },
-                    ["methodName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "方法名称" },
-                    ["args"] = new Dictionary<string, object> { ["type"] = "array", ["description"] = "方法参数列表" }
-                },
-                ["required"] = new List<string> { "nodePath", "methodName" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "list_methods",
-            Description = "列出节点所有方法",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-
-        // --- Resources ---
-        new McpToolDef
-        {
-            Name = "list_resources",
-            Description = "列出指定目录下的资源",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["path"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "资源目录路径，如 res://assets/" },
-                    ["filter"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "资源过滤器（可选）" }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "load_resource",
-            Description = "加载资源",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["resourcePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "资源路径，如 res://icon.png" }
-                },
-                ["required"] = new List<string> { "resourcePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_resource_info",
-            Description = "获取资源信息",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["resourcePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "资源路径" }
-                },
-                ["required"] = new List<string> { "resourcePath" }
-            }
-        },
-
-        // --- Script ---
-        new McpToolDef
-        {
-            Name = "execute_csharp",
-            Description = "执行 C# 代码片段",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["code"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "要执行的 C# 代码" }
-                },
-                ["required"] = new List<string> { "code" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_global_variables",
-            Description = "获取全局变量（场景根的子节点列表）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>()
-            }
-        },
-
-        // --- Signals ---
-        new McpToolDef
-        {
-            Name = "get_node_signals",
-            Description = "获取节点的所有信号",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_signal_connections",
-            Description = "获取信号的连接信息",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["sourceNodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "源节点路径" },
-                    ["signalName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "信号名称" }
-                },
-                ["required"] = new List<string> { "sourceNodePath", "signalName" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "connect_signal",
-            Description = "连接信号到方法",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["sourceNodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "源节点路径" },
-                    ["signalName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "信号名称" },
-                    ["targetNodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "目标节点路径" },
-                    ["targetMethod"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "目标方法名" }
-                },
-                ["required"] = new List<string> { "sourceNodePath", "signalName", "targetNodePath", "targetMethod" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "disconnect_signal",
-            Description = "断开信号连接",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["sourceNodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "源节点路径" },
-                    ["signalName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "信号名称" },
-                    ["targetNodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "目标节点路径" },
-                    ["targetMethod"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "目标方法名" }
-                },
-                ["required"] = new List<string> { "sourceNodePath", "signalName", "targetNodePath", "targetMethod" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "emit_signal",
-            Description = "发射自定义信号",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "节点路径" },
-                    ["signalName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "信号名称" },
-                    ["args"] = new Dictionary<string, object> { ["type"] = "array", ["description"] = "信号参数（可选）" }
-                },
-                ["required"] = new List<string> { "nodePath", "signalName" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "start_signal_monitoring",
-            Description = "监听信号事件（设置过滤器）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["signalName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "要监听的信号名称（为空则监听所有）" },
-                    ["maxEvents"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "最大记录数量" }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "stop_signal_monitoring",
-            Description = "停止监听信号事件（查看统计）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>()
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_signal_events",
-            Description = "获取已记录的信号事件（支持时间范围查询）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["count"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "获取最近 N 条事件" },
-                    ["nodePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "按节点路径过滤（可选）" },
-                    ["signalName"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "按信号名称过滤（可选）" },
-                    ["startTime"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "开始时间 Unix 时间戳（可选）" },
-                    ["endTime"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "结束时间 Unix 时间戳（可选）" }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "clear_signal_events",
-            Description = "清空信号事件记录",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>()
-            }
-        },
-
-        // --- Debug ---
-        new McpToolDef
-        {
-            Name = "get_logs",
-            Description = "获取游戏日志输出",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["count"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "日志数量，默认 50" }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_logs_filtered",
-            Description = "获取过滤后的日志",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["level"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "日志级别: error/warning/info/debug" },
-                    ["messagePattern"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "消息内容过滤" },
-                    ["startTime"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "开始时间戳" },
-                    ["endTime"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "结束时间戳" },
-                    ["maxCount"] = new Dictionary<string, object> { ["type"] = "integer", ["description"] = "最大返回数量" }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_log_stats",
-            Description = "获取日志统计信息",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>()
-            }
-        },
-        new McpToolDef
-        {
-            Name = "export_logs",
-            Description = "导出所有日志到文件",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["filePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "导出路径（可选）" }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "clear_logs",
-            Description = "清空日志缓冲区",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>()
-            }
-        },
-        new McpToolDef
-        {
-            Name = "add_custom_log",
-            Description = "添加自定义日志条目",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["message"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "日志消息" },
-                    ["level"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "日志级别: info/warning/error/debug" }
-                },
-                ["required"] = new List<string> { "message" }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_performance_stats",
-            Description = "获取性能统计信息（FPS、内存、节点数等）",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>()
-            }
-        },
-        new McpToolDef
-        {
-            Name = "take_screenshot",
-            Description = "截取游戏画面",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["savePath"] = new Dictionary<string, object> { ["type"] = "string", ["description"] = "保存路径（可选），如 user://screenshot.png" }
-                }
-            }
-        },
-        new McpToolDef
-        {
-            Name = "get_time",
-            Description = "获取当前时间和引擎运行时间",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>()
-            }
-        },
-        new McpToolDef
-        {
-            Name = "save_node_as_scene",
-            Description = "将指定节点及其子节点保存为 .tscn 场景文件，用于离线分析排查",
-            InputSchema = new Dictionary<string, object>
-            {
-                ["type"] = "object",
-                ["properties"] = new Dictionary<string, object>
-                {
-                    ["nodePath"] = new Dictionary<string, object>
-                    {
-                        ["type"] = "string",
-                        ["description"] = "要保存的节点路径，例如 /root/Main/GameWorld/Player"
-                    },
-                    ["includeChildren"] = new Dictionary<string, object>
-                    {
-                        ["type"] = "boolean",
-                        ["description"] = "是否包含所有子节点（无限层级），默认 true"
-                    },
-                    ["savePath"] = new Dictionary<string, object>
-                    {
-                        ["type"] = "string",
-                        ["description"] = "保存路径（可选），默认 user://mcp_saved_nodes/<nodeName>_<timestamp>.tscn"
-                    },
-                    ["returnContent"] = new Dictionary<string, object>
-                    {
-                        ["type"] = "boolean",
-                        ["description"] = "是否在返回值中包含文件内容文本，默认 true"
-                    }
-                },
-                ["required"] = new List<string> { "nodePath" }
-            }
-        }
-    };
-
-    // ===================== Godot Lifecycle =====================
+    // The backend owns Godot operations, not the MCP protocol or stdio transport.
+    // Every running game registers an independent, authenticated loopback endpoint.
+    private GodotRuntimeTransport? _transport;
 
     public override void _Ready()
     {
-        // Singleton protection: if another instance exists, this is a duplicate
-        if (_instance != null)
-        {
-            GD.Print("[GodotMcp] Duplicate instance detected, queuing free");
-            QueueFree();
-            return;
-        }
+        if (_instance != null) { QueueFree(); return; }
         _instance = this;
-
+        ProcessMode = ProcessModeEnum.Always;
         InitializeLogFile();
         InitializeSignalEventsFile();
         StartGlobalSignalMonitoring();
-
-        GD.Print("=".PadRight(60, '='));
-        GD.Print("[GodotMcp] Godot MCP v2.0 — Unified HTTP+SSE MCP Server");
-        GD.Print("[GodotMcp] Merged McpServer + GodotPlugin into one addon");
-        GD.Print("=".PadRight(60, '='));
-        GD.Print($"[GodotMcp] {_tools.Count + 1} MCP tools loaded");
-        GD.Print("[GodotMcp] ✓ Global signal monitoring started");
-        GD.Print("[GodotMcp] ✓ Log auto-recording started");
-
-        StartServer();
+        try
+        {
+            _transport = new GodotRuntimeTransport(
+                ProjectSettings.GlobalizePath("res://"),
+                HandleToolOperation,
+                LoadToolManifest);
+            _transport.Start();
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[GodotMcp] Cannot start runtime backend: {ex}");
+            _transport?.Dispose();
+            _transport = null;
+        }
     }
 
-    public override void _Process(double delta)
-    {
-        ProcessPendingRequests();
-    }
+    public override void _Process(double delta) => _transport?.Pump(delta);
 
     public override void _ExitTree()
     {
-        if (_instance == this)
-            _instance = null;
-
-        _isRunning = false;
-
-        // Close all SSE connections
-        lock (_sseLock)
-        {
-            foreach (var kvp in _sseConnections)
-            {
-                try { kvp.Value.Response.OutputStream.Close(); } catch { }
-                try { kvp.Value.Response.Close(); } catch { }
-            }
-            _sseConnections.Clear();
-        }
-
-        _httpListener?.Stop();
-        _httpListener?.Close();
-        GD.Print("[GodotMcp] Server stopped");
-    }
-
-    // ===================== HTTP Server =====================
-
-    private void StartServer()
-    {
-        try
-        {
-            _httpListener = new HttpListener();
-            _httpListener.Prefixes.Add(BaseUrl);
-            _httpListener.Start();
-            _isRunning = true;
-            GD.Print($"[GodotMcp] ✓ MCP HTTP+SSE server: {BaseUrl}");
-            GD.Print($"[GodotMcp]   SSE endpoint:  GET  /sse");
-            GD.Print($"[GodotMcp]   MCP endpoint:  POST /messages?session_id=...");
-            GD.Print($"[GodotMcp]   Legacy API:    POST /api/<endpoint>");
-            GD.Print($"[GodotMcp]   HTTP API:    POST /<endpoint>");
-            _ = Task.Run(HandleRequestsAsync);
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"[GodotMcp] ✗ Failed to start server: {ex.Message}");
-        }
-    }
-
-    private async Task HandleRequestsAsync()
-    {
-        while (_isRunning && _httpListener != null)
-        {
-            try
-            {
-                var context = await _httpListener.GetContextAsync();
-                _ = Task.Run(() => HandleRequestAsync(context));
-            }
-            catch (ObjectDisposedException) { break; }
-            catch { }
-        }
-    }
-
-    private async Task HandleRequestAsync(HttpListenerContext context)
-    {
-        try
-        {
-            var path = context.Request.Url?.AbsolutePath ?? "/";
-            var method = context.Request.HttpMethod;
-
-            // Route requests
-            if (path == "/sse" && method == "GET")
-            {
-                await HandleSseConnection(context);
-            }
-            else if (path == "/messages" && method == "POST")
-            {
-                await HandleMessagePost(context);
-            }
-            else if (method == "POST")
-            {
-                await HandleLegacyApi(context);
-            }
-            else
-            {
-                context.Response.StatusCode = 405;
-                context.Response.Close();
-            }
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"[GodotMcp] Request error: {ex.Message}");
-            try
-            {
-                context.Response.StatusCode = 500;
-                context.Response.Close();
-            }
-            catch { }
-        }
-    }
-
-    // ===================== SSE Transport =====================
-
-    private async Task HandleSseConnection(HttpListenerContext context)
-    {
-        var sessionId = Guid.NewGuid().ToString("N");
-        var response = context.Response;
-
-        response.StatusCode = 200;
-        response.ContentType = "text/event-stream";
-        response.Headers["Cache-Control"] = "no-cache";
-        response.Headers["Connection"] = "keep-alive";
-        response.Headers["Access-Control-Allow-Origin"] = "*";
-
-        var conn = new SseConnection
-        {
-            SessionId = sessionId,
-            Response = response,
-            Stream = response.OutputStream
-        };
-
-        lock (_sseLock)
-        {
-            _sseConnections[sessionId] = conn;
-        }
-
-        GD.Print($"[GodotMcp] SSE client connected: {sessionId}");
-
-        try
-        {
-            // Send endpoint event (tells client where to POST messages)
-            await SendSseEvent(conn.Stream, "endpoint", $"/messages?session_id={sessionId}");
-            GD.Print($"[GodotMcp]   → Sent endpoint event for session {sessionId}");
-
-            // Keep connection alive — send keepalive every 15s
-            using var cts = new CancellationTokenSource();
-            while (_isRunning && !cts.Token.IsCancellationRequested)
-            {
-                try
-                {
-                    await Task.Delay(15000, cts.Token);
-                    if (_isRunning)
-                    {
-                        await SendSseEvent(conn.Stream, null, ": keepalive");
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception)
-                {
-                    break;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            GD.Print($"[GodotMcp] SSE client disconnected: {sessionId} ({ex.Message})");
-        }
-        finally
-        {
-            lock (_sseLock)
-            {
-                _sseConnections.Remove(sessionId);
-            }
-            try { response.OutputStream.Close(); } catch { }
-            try { response.Close(); } catch { }
-        }
-    }
-
-    private async Task SendSseEvent(Stream stream, string eventType, string data)
-    {
-        var sb = new StringBuilder();
-        if (!string.IsNullOrEmpty(eventType))
-        {
-            sb.Append($"event: {eventType}\n");
-        }
-        sb.Append($"data: {data}\n\n");
-        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        await stream.WriteAsync(bytes, 0, bytes.Length);
-        await stream.FlushAsync();
-    }
-
-    private async Task SendSseMessage(Stream stream, string jsonMessage)
-    {
-        await SendSseEvent(stream, "message", jsonMessage);
-    }
-
-    /// <summary>
-    /// Send a JSON-RPC response through the SSE stream for a given session.
-    /// Falls back to the first available SSE connection if session not found.
-    /// </summary>
-    private async Task SendMcpResponse(string sessionId, string jsonResponse)
-    {
-        SseConnection conn = null;
-        lock (_sseLock)
-        {
-            if (!string.IsNullOrEmpty(sessionId) && _sseConnections.TryGetValue(sessionId, out var c))
-            {
-                conn = c;
-            }
-            else if (_sseConnections.Count > 0)
-            {
-                conn = _sseConnections.Values.First();
-            }
-        }
-
-        if (conn != null)
-        {
-            try
-            {
-                await SendSseMessage(conn.Stream, jsonResponse);
-            }
-            catch (Exception ex)
-            {
-                GD.PrintErr($"[GodotMcp] Failed to send SSE message: {ex.Message}");
-            }
-        }
-    }
-
-    // ===================== MCP Message Handler (POST /messages) =====================
-
-    private async Task HandleMessagePost(HttpListenerContext context)
-    {
-        var sessionId = context.Request.QueryString["session_id"];
-        using var reader = new StreamReader(context.Request.InputStream);
-        var body = await reader.ReadToEndAsync();
-
-        GD.Print($"[GodotMcp] MCP message from session {sessionId}");
-
-        // Process JSON-RPC
-        McpJsonRpcResponse response;
-
-        try
-        {
-            var request = JsonSerializer.Deserialize<McpJsonRpcRequest>(body, JsonOptions);
-            if (request == null)
-            {
-                response = MakeError(null, -32700, "Parse error: invalid JSON-RPC");
-            }
-            else
-            {
-                response = await ProcessMcpRequest(request, sessionId);
-            }
-        }
-        catch (JsonException ex)
-        {
-            response = MakeError(null, -32700, $"Parse error: {ex.Message}");
-        }
-
-        // Send response
-        var json = JsonSerializer.Serialize(response, JsonOptions);
-        var bytes = Encoding.UTF8.GetBytes(json);
-
-        context.Response.ContentType = "application/json; charset=utf-8";
-        context.Response.Headers["Access-Control-Allow-Origin"] = "*";
-        context.Response.ContentLength64 = bytes.Length;
-        await context.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
-        context.Response.Close();
-    }
-
-    // ===================== MCP Protocol =====================
-
-    private async Task<McpJsonRpcResponse> ProcessMcpRequest(McpJsonRpcRequest request, string sessionId)
-    {
-        var id = request.Id;
-
-        try
-        {
-            switch (request.Method)
-            {
-                case "initialize":
-                    return HandleInitialize(id, request.Params);
-
-                case "ping":
-                    return MakeResult(id, new Dictionary<string, object>());
-
-                case "tools/list":
-                    return HandleToolsList(id);
-
-                case "tools/call":
-                    return await HandleToolsCall(id, request.Params, sessionId);
-
-                case "shutdown":
-                    return MakeResult(id, null);
-
-                case "notifications/initialized":
-                    // Client confirms initialization — no response needed
-                    return null; // Notification: no response
-
-                case "notifications/cancelled":
-                    return null; // Notification: no response
-
-                default:
-                    return MakeError(id, -32601, $"Method not found: {request.Method}");
-            }
-        }
-        catch (Exception ex)
-        {
-            return MakeError(id, -32603, $"Internal error: {ex.Message}");
-        }
-    }
-
-    private McpJsonRpcResponse HandleInitialize(string id, Dictionary<string, object> params_)
-    {
-        GD.Print("[GodotMcp] MCP initialized");
-        return MakeResult(id, new Dictionary<string, object>
-        {
-            ["protocolVersion"] = ProtocolVersion,
-            ["capabilities"] = new Dictionary<string, object>
-            {
-                ["tools"] = new Dictionary<string, object>()
-            },
-            ["serverInfo"] = new Dictionary<string, object>
-            {
-                ["name"] = McpServerName,
-                ["version"] = McpServerVersion
-            }
-        });
-    }
-
-    private McpJsonRpcResponse HandleToolsList(string id)
-    {
-        var toolsList = _tools.Select(t => new Dictionary<string, object>
-        {
-            ["name"] = t.Name,
-            ["description"] = t.Description,
-            ["inputSchema"] = t.InputSchema
-        }).ToList();
-
-        return MakeResult(id, new Dictionary<string, object>
-        {
-            ["tools"] = toolsList
-        });
-    }
-
-    private async Task<McpJsonRpcResponse> HandleToolsCall(string id, Dictionary<string, object> params_, string sessionId)
-    {
-        if (params_ == null || !params_.ContainsKey("name"))
-        {
-            return MakeError(id, -32602, "Missing required parameter: name");
-        }
-
-        var toolName = params_["name"]?.ToString() ?? "";
-        var arguments = params_.ContainsKey("arguments") && params_["arguments"] is Dictionary<string, object> args
-            ? args
-            : new Dictionary<string, object>();
-
-        // Queue the tool call to be executed on the main thread
-        var pending = new PendingRequest
-        {
-            Type = "tool_call",
-            ToolName = toolName,
-            ToolArgs = arguments,
-            SessionId = sessionId,
-            CompletionSource = new TaskCompletionSource<ApiResponse>()
-        };
-
-        lock (_queueLock)
-        {
-            _requestQueue.Enqueue(pending);
-        }
-
-        // Wait for main thread to process
-        var result = await pending.CompletionSource.Task;
-
-        if (!result.Success)
-        {
-            return MakeError(id, -32603, result.Error ?? "Tool call failed");
-        }
-
-        var content = new List<object>
-        {
-            new Dictionary<string, object>
-            {
-                ["type"] = "text",
-                ["text"] = JsonSerializer.Serialize(result.Data, JsonOptions)
-            }
-        };
-
-        return MakeResult(id, new Dictionary<string, object>
-        {
-            ["content"] = content
-        });
-    }
-
-    // ===================== Legacy HTTP API Handler (POST /<endpoint>) =====================
-
-    private async Task HandleLegacyApi(HttpListenerContext context)
-    {
-        var path = context.Request.Url?.AbsolutePath ?? "/";
-        using var reader = new StreamReader(context.Request.InputStream);
-        var body = await reader.ReadToEndAsync();
-
-        // Create pending request for main thread processing
-        var pending = new PendingRequest
-        {
-            Type = "legacy_api",
-            Path = path,
-            Body = body,
-            CompletionSource = new TaskCompletionSource<ApiResponse>()
-        };
-
-        lock (_queueLock)
-        {
-            _requestQueue.Enqueue(pending);
-        }
-
-        var response = await pending.CompletionSource.Task;
-        var json = JsonSerializer.Serialize(response, JsonOptions);
-        var bytes = Encoding.UTF8.GetBytes(json);
-
-        context.Response.ContentType = "application/json; charset=utf-8";
-        context.Response.Headers["Access-Control-Allow-Origin"] = "*";
-        context.Response.ContentLength64 = bytes.Length;
-        await context.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
-        context.Response.Close();
-    }
-
-    // ===================== Main Thread Request Processing =====================
-
-    private void ProcessPendingRequests()
-    {
-        while (true)
-        {
-            PendingRequest request = null;
-            lock (_queueLock)
-            {
-                if (_requestQueue.Count > 0)
-                {
-                    request = _requestQueue.Dequeue();
-                }
-            }
-
-            if (request == null)
-                break;
-
-            try
-            {
-                if (request.Type == "tool_call")
-                {
-                    var result = HandleToolOperation(request.ToolName, request.ToolArgs);
-                    request.CompletionSource.SetResult(result);
-                }
-                else
-                {
-                    var result = RouteLegacyApi(request.Path, request.Body);
-                    request.CompletionSource.SetResult(result);
-                }
-            }
-            catch (Exception ex)
-            {
-                request.CompletionSource.SetResult(ErrorResponse(ex.Message));
-            }
-        }
-    }
-
-    private ApiResponse RouteLegacyApi(string path, string body)
-    {
-        try
-        {
-            // Support both /api/<endpoint> and /<endpoint> formats
-            var cleanPath = path;
-            if (cleanPath.StartsWith("/api"))
-                cleanPath = cleanPath[4..];
-            if (string.IsNullOrEmpty(cleanPath))
-                cleanPath = "/";
-
-            return cleanPath switch
-            {
-                "/get_scene_tree" => HandleToolOperation("get_scene_tree", DeserializeArgs<SceneTreeRequest>(body)),
-                "/get_scene_tree_simple" => HandleToolOperation("get_scene_tree_simple", DeserializeArgs(body)),
-                "/get_node_info" => HandleToolOperation("get_node_info", DeserializeArgs<NodePathRequest>(body)),
-                "/create_node" => HandleToolOperation("create_node", DeserializeArgs<CreateNodeRequest>(body)),
-                "/delete_node" => HandleToolOperation("delete_node", DeserializeArgs<NodePathRequest>(body)),
-                "/load_scene" => HandleToolOperation("load_scene", DeserializeArgs<ScenePathRequest>(body)),
-                "/get_property" => HandleToolOperation("get_property", DeserializeArgs<PropertyRequest>(body)),
-                "/set_property" => HandleToolOperation("set_property", DeserializeArgs<SetPropertyRequest>(body)),
-                "/list_properties" => HandleToolOperation("list_properties", DeserializeArgs<NodePathRequest>(body)),
-                "/call_method" => HandleToolOperation("call_method", DeserializeArgs<CallMethodRequest>(body)),
-                "/list_methods" => HandleToolOperation("list_methods", DeserializeArgs<NodePathRequest>(body)),
-                "/execute_csharp" => HandleToolOperation("execute_csharp", DeserializeArgs<CodeRequest>(body)),
-                "/get_global_variables" => HandleToolOperation("get_global_variables", new Dictionary<string, object>()),
-                "/get_resource_info" => HandleToolOperation("get_resource_info", DeserializeArgs<ResourcePathRequest>(body)),
-                "/list_resources" => HandleToolOperation("list_resources", DeserializeArgs<ListResourcesRequest>(body)),
-                "/load_resource" => HandleToolOperation("load_resource", DeserializeArgs<ResourcePathRequest>(body)),
-                "/get_performance_stats" => HandleToolOperation("get_performance_stats", new Dictionary<string, object>()),
-                "/get_logs" => HandleToolOperation("get_logs", DeserializeArgs<LogsRequest>(body)),
-                "/take_screenshot" => HandleToolOperation("take_screenshot", DeserializeArgs<ScreenshotRequest>(body)),
-                "/get_time" => HandleToolOperation("get_time", new Dictionary<string, object>()),
-                "/save_node_as_scene" => HandleToolOperation("save_node_as_scene", DeserializeArgs(body)),
-                "/get_node_children" => HandleToolOperation("get_node_children", DeserializeArgs<NodePathRequest>(body)),
-                "/get_node_parent" => HandleToolOperation("get_node_parent", DeserializeArgs<NodePathRequest>(body)),
-                "/find_nodes_by_type" => HandleToolOperation("find_nodes_by_type", DeserializeArgs<FindNodesRequest>(body)),
-                "/find_nodes_by_name" => HandleToolOperation("find_nodes_by_name", DeserializeArgs<FindNodesRequest>(body)),
-                "/find_nodes_by_group" => HandleToolOperation("find_nodes_by_group", DeserializeArgs<FindNodesRequest>(body)),
-                "/get_node_ancestors" => HandleToolOperation("get_node_ancestors", DeserializeArgs<AncestorsRequest>(body)),
-                "/get_scene_tree_stats" => HandleToolOperation("get_scene_tree_stats", DeserializeArgs<NodePathRequest>(body)),
-                "/node_exists" => HandleToolOperation("node_exists", DeserializeArgs<NodePathRequest>(body)),
-                "/get_node_subtree" => HandleToolOperation("get_node_subtree", DeserializeArgs<SubtreeRequest>(body)),
-                "/search_nodes" => HandleToolOperation("search_nodes", DeserializeArgs<FindNodesRequest>(body)),
-                "/get_node_context" => HandleToolOperation("get_node_context", DeserializeArgs<NodeContextRequest>(body)),
-                "/get_node_signals" => HandleToolOperation("get_node_signals", DeserializeArgs<NodePathRequest>(body)),
-                "/get_signal_connections" => HandleToolOperation("get_signal_connections", DeserializeArgs<SignalConnectionRequest>(body)),
-                "/connect_signal" => HandleToolOperation("connect_signal", DeserializeArgs<SignalConnectionRequest>(body)),
-                "/disconnect_signal" => HandleToolOperation("disconnect_signal", DeserializeArgs<SignalConnectionRequest>(body)),
-                "/emit_signal" => HandleToolOperation("emit_signal", DeserializeArgs<SignalEmitRequest>(body)),
-                "/start_signal_monitoring" => HandleToolOperation("start_signal_monitoring", DeserializeArgs<SignalMonitorRequest>(body)),
-                "/stop_signal_monitoring" => HandleToolOperation("stop_signal_monitoring", new Dictionary<string, object>()),
-                "/get_signal_events" => HandleToolOperation("get_signal_events", DeserializeArgs<SignalEventQueryRequest>(body)),
-                "/clear_signal_events" => HandleToolOperation("clear_signal_events", new Dictionary<string, object>()),
-                "/get_logs_filtered" => HandleToolOperation("get_logs_filtered", DeserializeArgs<LogFilterRequest>(body)),
-                "/get_log_stats" => HandleToolOperation("get_log_stats", new Dictionary<string, object>()),
-                "/export_logs" => HandleToolOperation("export_logs", DeserializeArgs<LogExportRequest>(body)),
-                "/clear_logs" => HandleToolOperation("clear_logs", new Dictionary<string, object>()),
-                "/add_custom_log" => HandleToolOperation("add_custom_log", DeserializeArgs<CustomLogRequest>(body)),
-                _ => ErrorResponse($"Unknown endpoint: {path}")
-            };
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"[GodotMcp] Route error: {ex.Message}");
-            return ErrorResponse(ex.Message);
-        }
+        _transport?.Dispose();
+        _transport = null;
+        if (_instance == this) _instance = null;
     }
 
     // ===================== Tool Operation Router =====================
-
     private ApiResponse HandleToolOperation(string toolName, Dictionary<string, object> args)
     {
         try
@@ -1533,58 +292,10 @@ public partial class GodotMcpServer : Node
             if (val is List<object> list) return list;
             if (val is JsonElement je && je.ValueKind == JsonValueKind.Array)
             {
-                return je.EnumerateArray()
-                    .Select(e => (object)(e.ValueKind == JsonValueKind.String ? e.GetString() :
-                                         e.ValueKind == JsonValueKind.Number ? e.GetDouble() :
-                                         e.ValueKind == JsonValueKind.True ? true :
-                                         e.ValueKind == JsonValueKind.False ? false :
-                                         e.ToString()))
-                    .ToList();
+                return je.EnumerateArray().Select(e => (object)e.Clone()).ToList();
             }
         }
         return null;
-    }
-
-    private static Dictionary<string, object> DeserializeArgs<T>(string body) where T : new()
-    {
-        try
-        {
-            var typed = JsonSerializer.Deserialize<T>(body, JsonOptions);
-            if (typed == null) return new Dictionary<string, object>();
-
-            // Convert typed object to dictionary using reflection
-            var dict = new Dictionary<string, object>();
-            foreach (var prop in typeof(T).GetProperties())
-            {
-                var val = prop.GetValue(typed);
-                if (val != null)
-                {
-                    var jsonName = prop.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
-                        .FirstOrDefault() is JsonPropertyNameAttribute jna
-                        ? jna.Name
-                        : prop.Name.ToCamelCase();
-                    dict[jsonName] = val;
-                }
-            }
-            return dict;
-        }
-        catch
-        {
-            return new Dictionary<string, object>();
-        }
-    }
-
-    private static Dictionary<string, object> DeserializeArgs(string body)
-    {
-        try
-        {
-            var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(body, JsonOptions);
-            return dict ?? new Dictionary<string, object>();
-        }
-        catch
-        {
-            return new Dictionary<string, object>();
-        }
     }
 
     // ===================== Scene Tree Tools =====================
@@ -1924,7 +635,7 @@ public partial class GodotMcpServer : Node
         var node = GetNodeOrNull(nodePath);
         if (node == null) return Err($"Node not found: {nodePath}");
 
-        var context = new Dictionary<string, object>
+        var context = new Dictionary<string, object?>
         {
             ["node"] = new Dictionary<string, object>
             {
@@ -1986,8 +697,26 @@ public partial class GodotMcpServer : Node
     {
         var node = GetNodeOrNull(nodePath);
         if (node == null) return Err($"Node not found: {nodePath}");
-        node.Set(propertyName, ToVar(value));
-        return Ok($"Set: {propertyName}");
+        if (!node.GetPropertyList().Any(p => p["name"].AsString() == propertyName))
+            return Err($"Unknown node property: {propertyName}");
+        var existing = node.Get(propertyName).VariantType;
+        // Godot does not coerce JSON maps into engine vector variants automatically.
+        Variant converted;
+        if (value is JsonElement je && je.ValueKind == JsonValueKind.Object &&
+            existing == Variant.Type.Vector2)
+            converted = new Vector2(
+                (float)je.GetProperty("x").GetDouble(),
+                (float)je.GetProperty("y").GetDouble());
+        else if (value is JsonElement j3 && j3.ValueKind == JsonValueKind.Object &&
+            existing == Variant.Type.Vector3)
+            converted = new Vector3(
+                (float)j3.GetProperty("x").GetDouble(),
+                (float)j3.GetProperty("y").GetDouble(),
+                (float)j3.GetProperty("z").GetDouble());
+        else
+            converted = ToVar(value);
+        node.Set(propertyName, converted);
+        return Ok(new { propertyName, value = Conv(node.Get(propertyName)) });
     }
 
     private ApiResponse ListProperties(string nodePath)
@@ -2053,7 +782,7 @@ public partial class GodotMcpServer : Node
 
     // ===================== Script Tools =====================
 
-    private ApiResponse ExecuteCSharp(string code) => Ok("Requires Roslyn runtime. Use alternative approach.");
+    private ApiResponse ExecuteCSharp(string code) => Err("execute_csharp is unavailable: Roslyn runtime is not bundled. No code was executed.");
 
     private ApiResponse GetGlobalVariables()
     {
@@ -2784,27 +1513,46 @@ public partial class GodotMcpServer : Node
         };
     }
 
-    private Variant ToVar(object? o)
+    private Variant ToVar(object? value)
     {
-        return o switch
+        if (value is JsonElement json)
         {
-            null => default,
-            bool b => b,
-            int i => i,
-            long l => l,
-            float f => f,
-            double d => d,
-            string s => s,
-            JsonElement je => je.ValueKind switch
+            switch (json.ValueKind)
             {
-                JsonValueKind.Null => default,
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.Number => je.GetDouble(),
-                JsonValueKind.String => je.GetString() ?? "",
-                _ => je.ToString() ?? ""
-            },
-            _ => o.ToString() ?? ""
+                case JsonValueKind.Null:
+                case JsonValueKind.Undefined: return default;
+                case JsonValueKind.True: return true;
+                case JsonValueKind.False: return false;
+                case JsonValueKind.String: return json.GetString() ?? "";
+                case JsonValueKind.Number:
+                    return json.TryGetInt64(out var number) ? (Variant)number : (Variant)json.GetDouble();
+                case JsonValueKind.Array:
+                    var array = new Godot.Collections.Array();
+                    foreach (var element in json.EnumerateArray()) array.Add(ToVar(element));
+                    return array;
+                case JsonValueKind.Object:
+                    // Explicit types are useful for call_method and emit_signal.
+                    if (json.TryGetProperty("$type", out var kind))
+                    {
+                        if (kind.GetString() == "Vector2")
+                            return new Vector2((float)json.GetProperty("x").GetDouble(),
+                                               (float)json.GetProperty("y").GetDouble());
+                        if (kind.GetString() == "Vector3")
+                            return new Vector3((float)json.GetProperty("x").GetDouble(),
+                                               (float)json.GetProperty("y").GetDouble(),
+                                               (float)json.GetProperty("z").GetDouble());
+                    }
+                    var dictionary = new Godot.Collections.Dictionary();
+                    foreach (var prop in json.EnumerateObject())
+                        dictionary[prop.Name] = ToVar(prop.Value);
+                    return dictionary;
+            }
+        }
+        return value switch
+        {
+            null => default, bool b => b, int i => i, long l => l,
+            float f => f, double d => d, string s => s,
+            _ => value.ToString() ?? ""
         };
     }
 
@@ -2812,93 +1560,6 @@ public partial class GodotMcpServer : Node
     private ApiResponse Err(string msg) => new() { Success = false, Error = msg };
     private ApiResponse ErrorResponse(string msg) => new() { Success = false, Error = msg };
 
-    private McpJsonRpcResponse MakeResult(string? id, object? result)
-    {
-        return new McpJsonRpcResponse
-        {
-            Jsonrpc = "2.0",
-            Id = id,
-            Result = result
-        };
-    }
-
-    private McpJsonRpcResponse MakeError(string? id, int code, string message)
-    {
-        return new McpJsonRpcResponse
-        {
-            Jsonrpc = "2.0",
-            Id = id,
-            Error = new McpError { Code = code, Message = message }
-        };
-    }
-}
-
-// ===================== MCP Protocol Types =====================
-
-internal class McpJsonRpcRequest
-{
-    [JsonPropertyName("jsonrpc")]
-    public string Jsonrpc { get; set; } = "2.0";
-
-    [JsonPropertyName("id")]
-    public string? Id { get; set; }
-
-    [JsonPropertyName("method")]
-    public string Method { get; set; } = "";
-
-    [JsonPropertyName("params")]
-    public Dictionary<string, object>? Params { get; set; }
-}
-
-internal class McpJsonRpcResponse
-{
-    [JsonPropertyName("jsonrpc")]
-    public string Jsonrpc { get; set; } = "2.0";
-
-    [JsonPropertyName("id")]
-    public string? Id { get; set; }
-
-    [JsonPropertyName("result")]
-    public object? Result { get; set; }
-
-    [JsonPropertyName("error")]
-    public McpError? Error { get; set; }
-}
-
-internal class McpError
-{
-    [JsonPropertyName("code")]
-    public int Code { get; set; }
-
-    [JsonPropertyName("message")]
-    public string Message { get; set; } = "";
-}
-
-internal class McpToolDef
-{
-    public string Name { get; set; } = "";
-    public string Description { get; set; } = "";
-    public Dictionary<string, object> InputSchema { get; set; } = new();
-}
-
-internal class SseConnection
-{
-    public string SessionId { get; set; } = "";
-    public HttpListenerResponse Response { get; set; } = null!;
-    public Stream Stream { get; set; } = null!;
-}
-
-// ===================== Internal Request Types =====================
-
-internal class PendingRequest
-{
-    public string Type { get; set; } = ""; // "tool_call" or "legacy_api"
-    public string Path { get; set; } = "";
-    public string Body { get; set; } = "";
-    public string ToolName { get; set; } = "";
-    public Dictionary<string, object> ToolArgs { get; set; } = new();
-    public string SessionId { get; set; } = "";
-    public TaskCompletionSource<ApiResponse> CompletionSource { get; set; } = null!;
 }
 
 // ===================== Data Models =====================
@@ -2943,230 +1604,4 @@ public class SignalEvent
 
     [JsonPropertyName("args")]
     public List<string> Args { get; set; } = new();
-}
-
-// ===================== Legacy Request Models (for HTTP API backward compat) =====================
-
-public class SceneTreeRequest
-{
-    [JsonPropertyName("includeProperties")]
-    public bool IncludeProperties { get; set; }
-}
-
-public class NodePathRequest
-{
-    [JsonPropertyName("nodePath")]
-    public string NodePath { get; set; } = "";
-}
-
-public class CreateNodeRequest
-{
-    [JsonPropertyName("parentPath")]
-    public string ParentPath { get; set; } = "";
-    [JsonPropertyName("nodeType")]
-    public string NodeType { get; set; } = "";
-    [JsonPropertyName("nodeName")]
-    public string NodeName { get; set; } = "";
-}
-
-public class ScenePathRequest
-{
-    [JsonPropertyName("scenePath")]
-    public string ScenePath { get; set; } = "";
-}
-
-public class PropertyRequest
-{
-    [JsonPropertyName("nodePath")]
-    public string NodePath { get; set; } = "";
-    [JsonPropertyName("propertyName")]
-    public string PropertyName { get; set; } = "";
-}
-
-public class SetPropertyRequest
-{
-    [JsonPropertyName("nodePath")]
-    public string NodePath { get; set; } = "";
-    [JsonPropertyName("propertyName")]
-    public string PropertyName { get; set; } = "";
-    [JsonPropertyName("value")]
-    public object? Value { get; set; }
-}
-
-public class CallMethodRequest
-{
-    [JsonPropertyName("nodePath")]
-    public string NodePath { get; set; } = "";
-    [JsonPropertyName("methodName")]
-    public string MethodName { get; set; } = "";
-    [JsonPropertyName("args")]
-    public List<object>? Args { get; set; }
-}
-
-public class CodeRequest
-{
-    [JsonPropertyName("code")]
-    public string Code { get; set; } = "";
-}
-
-public class ResourcePathRequest
-{
-    [JsonPropertyName("resourcePath")]
-    public string ResourcePath { get; set; } = "";
-}
-
-public class ListResourcesRequest
-{
-    [JsonPropertyName("path")]
-    public string Path { get; set; } = "res://";
-    [JsonPropertyName("filter")]
-    public string? Filter { get; set; }
-}
-
-public class LogsRequest
-{
-    [JsonPropertyName("count")]
-    public int Count { get; set; } = 50;
-}
-
-public class ScreenshotRequest
-{
-    [JsonPropertyName("savePath")]
-    public string? SavePath { get; set; }
-}
-
-public class FindNodesRequest
-{
-    [JsonPropertyName("nodeType")]
-    public string? NodeType { get; set; }
-    [JsonPropertyName("namePattern")]
-    public string? NamePattern { get; set; }
-    [JsonPropertyName("rootPath")]
-    public string RootPath { get; set; } = "/root";
-    [JsonPropertyName("caseSensitive")]
-    public bool CaseSensitive { get; set; }
-    [JsonPropertyName("exactMatch")]
-    public bool ExactMatch { get; set; }
-    [JsonPropertyName("groupName")]
-    public string? GroupName { get; set; }
-    [JsonPropertyName("maxResults")]
-    public int MaxResults { get; set; } = 50;
-}
-
-public class SubtreeRequest
-{
-    [JsonPropertyName("nodePath")]
-    public string NodePath { get; set; } = "";
-    [JsonPropertyName("maxDepth")]
-    public int MaxDepth { get; set; } = 2;
-    [JsonPropertyName("includeProperties")]
-    public bool IncludeProperties { get; set; }
-}
-
-public class AncestorsRequest
-{
-    [JsonPropertyName("nodePath")]
-    public string NodePath { get; set; } = "";
-    [JsonPropertyName("levels")]
-    public int Levels { get; set; } = -1;
-    [JsonPropertyName("includeSiblings")]
-    public bool IncludeSiblings { get; set; }
-}
-
-public class NodeContextRequest
-{
-    [JsonPropertyName("nodePath")]
-    public string NodePath { get; set; } = "";
-    [JsonPropertyName("includeParent")]
-    public bool IncludeParent { get; set; } = true;
-    [JsonPropertyName("includeSiblings")]
-    public bool IncludeSiblings { get; set; } = true;
-    [JsonPropertyName("includeChildren")]
-    public bool IncludeChildren { get; set; } = true;
-}
-
-public class SignalConnectionRequest
-{
-    [JsonPropertyName("sourceNodePath")]
-    public string SourceNodePath { get; set; } = "";
-    [JsonPropertyName("signalName")]
-    public string SignalName { get; set; } = "";
-    [JsonPropertyName("targetNodePath")]
-    public string? TargetNodePath { get; set; }
-    [JsonPropertyName("targetMethod")]
-    public string? TargetMethod { get; set; }
-}
-
-public class SignalEmitRequest
-{
-    [JsonPropertyName("nodePath")]
-    public string NodePath { get; set; } = "";
-    [JsonPropertyName("signalName")]
-    public string SignalName { get; set; } = "";
-    [JsonPropertyName("args")]
-    public List<object>? Args { get; set; }
-}
-
-public class SignalMonitorRequest
-{
-    [JsonPropertyName("nodePath")]
-    public string? NodePath { get; set; }
-    [JsonPropertyName("signalName")]
-    public string? SignalName { get; set; }
-    [JsonPropertyName("maxEvents")]
-    public int MaxEvents { get; set; } = 5000;
-}
-
-public class SignalEventQueryRequest
-{
-    [JsonPropertyName("count")]
-    public int Count { get; set; } = 50;
-    [JsonPropertyName("nodePath")]
-    public string? NodePath { get; set; }
-    [JsonPropertyName("signalName")]
-    public string? SignalName { get; set; }
-    [JsonPropertyName("startTime")]
-    public long? StartTime { get; set; }
-    [JsonPropertyName("endTime")]
-    public long? EndTime { get; set; }
-}
-
-public class LogFilterRequest
-{
-    [JsonPropertyName("level")]
-    public string? Level { get; set; }
-    [JsonPropertyName("messagePattern")]
-    public string? MessagePattern { get; set; }
-    [JsonPropertyName("startTime")]
-    public long? StartTime { get; set; }
-    [JsonPropertyName("endTime")]
-    public long? EndTime { get; set; }
-    [JsonPropertyName("maxCount")]
-    public int MaxCount { get; set; } = 100;
-}
-
-public class LogExportRequest
-{
-    [JsonPropertyName("filePath")]
-    public string? FilePath { get; set; }
-}
-
-public class CustomLogRequest
-{
-    [JsonPropertyName("message")]
-    public string Message { get; set; } = "";
-    [JsonPropertyName("level")]
-    public string Level { get; set; } = "info";
-}
-
-// ===================== Extension Methods =====================
-
-internal static class StringExtensions
-{
-    public static string ToCamelCase(this string str)
-    {
-        if (string.IsNullOrEmpty(str) || char.IsLower(str[0]))
-            return str;
-        return char.ToLower(str[0]) + str[1..];
-    }
 }

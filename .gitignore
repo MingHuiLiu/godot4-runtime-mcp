@@ -18,3 +18,11 @@ data_*/
 # OS
 .DS_Store
 Thumbs.db
+
+# Keep the C# CLI launcher under the repository root tracked; ignore build output.
+!/bin/
+/bin/*
+!/bin/godot-mcp
+
+# Native AOT release artifacts (never commit binaries)
+dist/

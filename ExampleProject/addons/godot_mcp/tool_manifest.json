@@ -1,0 +1,850 @@
+[
+  {
+    "name": "get_scene_tree",
+    "description": "获取当前场景树完整结构",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "includeProperties": {
+          "type": "boolean",
+          "description": "是否包含节点属性"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_scene_tree_simple",
+    "description": "获取场景树简化结构（仅名称和类型，用于快速浏览）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rootPath": {
+          "type": "string",
+          "description": "根节点路径，默认 /root"
+        },
+        "maxDepth": {
+          "type": "integer",
+          "description": "最大深度，默认 3"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_node_info",
+    "description": "获取指定节点的详细信息（属性、方法、信号、子节点）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径，例如 /root/Main/Player"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "create_node",
+    "description": "创建新节点",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "parentPath": {
+          "type": "string",
+          "description": "父节点路径"
+        },
+        "nodeType": {
+          "type": "string",
+          "description": "节点类型，如 Node2D, Sprite2D"
+        },
+        "nodeName": {
+          "type": "string",
+          "description": "新节点名称"
+        }
+      },
+      "required": [
+        "parentPath",
+        "nodeType",
+        "nodeName"
+      ]
+    }
+  },
+  {
+    "name": "delete_node",
+    "description": "删除节点",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "要删除的节点路径"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "load_scene",
+    "description": "加载场景文件",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "scenePath": {
+          "type": "string",
+          "description": "场景文件路径，如 res://scenes/level1.tscn"
+        }
+      },
+      "required": [
+        "scenePath"
+      ]
+    }
+  },
+  {
+    "name": "get_node_children",
+    "description": "获取节点的直接子节点列表（不递归，轻量级）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "get_node_parent",
+    "description": "获取节点的父节点路径",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "find_nodes_by_type",
+    "description": "查找指定类型的所有节点",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodeType": {
+          "type": "string",
+          "description": "节点类型，如 Sprite2D, Camera2D"
+        },
+        "rootPath": {
+          "type": "string",
+          "description": "搜索根路径，默认 /root"
+        }
+      },
+      "required": [
+        "nodeType"
+      ]
+    }
+  },
+  {
+    "name": "find_nodes_by_name",
+    "description": "按名称搜索节点（支持模糊匹配）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "namePattern": {
+          "type": "string",
+          "description": "节点名称或名称片段"
+        },
+        "rootPath": {
+          "type": "string",
+          "description": "搜索根路径，默认 /root"
+        },
+        "caseSensitive": {
+          "type": "boolean",
+          "description": "是否区分大小写"
+        },
+        "exactMatch": {
+          "type": "boolean",
+          "description": "是否精确匹配"
+        }
+      },
+      "required": [
+        "namePattern"
+      ]
+    }
+  },
+  {
+    "name": "find_nodes_by_group",
+    "description": "按组名查找节点",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "groupName": {
+          "type": "string",
+          "description": "组名"
+        },
+        "rootPath": {
+          "type": "string",
+          "description": "搜索根路径，默认 /root"
+        }
+      },
+      "required": [
+        "groupName"
+      ]
+    }
+  },
+  {
+    "name": "get_node_ancestors",
+    "description": "获取节点的祖先路径（向上追溯多层）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        },
+        "levels": {
+          "type": "integer",
+          "description": "向上追溯层数，-1=追溯到根"
+        },
+        "includeSiblings": {
+          "type": "boolean",
+          "description": "是否包含兄弟节点"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "get_scene_tree_stats",
+    "description": "获取场景树统计信息（节点数量、类型分布等）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rootPath": {
+          "type": "string",
+          "description": "统计根路径，默认 /root"
+        }
+      }
+    }
+  },
+  {
+    "name": "node_exists",
+    "description": "检查节点是否存在",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "get_node_subtree",
+    "description": "获取节点的子树（指定深度，避免完整树太大）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        },
+        "maxDepth": {
+          "type": "integer",
+          "description": "递归深度，默认 2"
+        },
+        "includeProperties": {
+          "type": "boolean",
+          "description": "是否包含属性"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "search_nodes",
+    "description": "智能搜索节点（组合多个条件）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "namePattern": {
+          "type": "string",
+          "description": "名称模糊匹配（可选）"
+        },
+        "nodeType": {
+          "type": "string",
+          "description": "节点类型（可选）"
+        },
+        "groupName": {
+          "type": "string",
+          "description": "组名（可选）"
+        },
+        "rootPath": {
+          "type": "string",
+          "description": "搜索根路径"
+        },
+        "maxResults": {
+          "type": "integer",
+          "description": "最大返回结果数"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_node_context",
+    "description": "获取节点的上下文信息（父节点、兄弟节点、子节点）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        },
+        "includeParent": {
+          "type": "boolean",
+          "description": "是否包含父节点"
+        },
+        "includeSiblings": {
+          "type": "boolean",
+          "description": "是否包含兄弟节点"
+        },
+        "includeChildren": {
+          "type": "boolean",
+          "description": "是否包含子节点"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "get_property",
+    "description": "获取节点属性值",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        },
+        "propertyName": {
+          "type": "string",
+          "description": "属性名称，如 position, visible"
+        }
+      },
+      "required": [
+        "nodePath",
+        "propertyName"
+      ]
+    }
+  },
+  {
+    "name": "set_property",
+    "description": "设置节点属性值",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        },
+        "propertyName": {
+          "type": "string",
+          "description": "属性名称"
+        },
+        "value": {
+          "description": "任意 JSON 属性值；Vector2/Vector3 可用 {x,y,z} 对象"
+        }
+      },
+      "required": [
+        "nodePath",
+        "propertyName",
+        "value"
+      ]
+    }
+  },
+  {
+    "name": "list_properties",
+    "description": "列出节点所有属性",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "call_method",
+    "description": "调用节点方法",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        },
+        "methodName": {
+          "type": "string",
+          "description": "方法名称"
+        },
+        "args": {
+          "type": "array",
+          "description": "方法参数列表"
+        }
+      },
+      "required": [
+        "nodePath",
+        "methodName"
+      ]
+    }
+  },
+  {
+    "name": "list_methods",
+    "description": "列出节点所有方法",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "list_resources",
+    "description": "列出指定目录下的资源",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "资源目录路径，如 res://assets/"
+        },
+        "filter": {
+          "type": "string",
+          "description": "资源过滤器（可选）"
+        }
+      }
+    }
+  },
+  {
+    "name": "load_resource",
+    "description": "加载资源",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "resourcePath": {
+          "type": "string",
+          "description": "资源路径，如 res://icon.png"
+        }
+      },
+      "required": [
+        "resourcePath"
+      ]
+    }
+  },
+  {
+    "name": "get_resource_info",
+    "description": "获取资源信息",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "resourcePath": {
+          "type": "string",
+          "description": "资源路径"
+        }
+      },
+      "required": [
+        "resourcePath"
+      ]
+    }
+  },
+  {
+    "name": "execute_csharp",
+    "description": "此版本未提供 Roslyn，execute_csharp 暂不可用；不会执行代码",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "要执行的 C# 代码"
+        }
+      },
+      "required": [
+        "code"
+      ]
+    }
+  },
+  {
+    "name": "get_global_variables",
+    "description": "获取全局变量（场景根的子节点列表）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "get_node_signals",
+    "description": "获取节点的所有信号",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  },
+  {
+    "name": "get_signal_connections",
+    "description": "获取信号的连接信息",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sourceNodePath": {
+          "type": "string",
+          "description": "源节点路径"
+        },
+        "signalName": {
+          "type": "string",
+          "description": "信号名称"
+        }
+      },
+      "required": [
+        "sourceNodePath",
+        "signalName"
+      ]
+    }
+  },
+  {
+    "name": "connect_signal",
+    "description": "连接信号到方法",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sourceNodePath": {
+          "type": "string",
+          "description": "源节点路径"
+        },
+        "signalName": {
+          "type": "string",
+          "description": "信号名称"
+        },
+        "targetNodePath": {
+          "type": "string",
+          "description": "目标节点路径"
+        },
+        "targetMethod": {
+          "type": "string",
+          "description": "目标方法名"
+        }
+      },
+      "required": [
+        "sourceNodePath",
+        "signalName",
+        "targetNodePath",
+        "targetMethod"
+      ]
+    }
+  },
+  {
+    "name": "disconnect_signal",
+    "description": "断开信号连接",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sourceNodePath": {
+          "type": "string",
+          "description": "源节点路径"
+        },
+        "signalName": {
+          "type": "string",
+          "description": "信号名称"
+        },
+        "targetNodePath": {
+          "type": "string",
+          "description": "目标节点路径"
+        },
+        "targetMethod": {
+          "type": "string",
+          "description": "目标方法名"
+        }
+      },
+      "required": [
+        "sourceNodePath",
+        "signalName",
+        "targetNodePath",
+        "targetMethod"
+      ]
+    }
+  },
+  {
+    "name": "emit_signal",
+    "description": "发射自定义信号",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "节点路径"
+        },
+        "signalName": {
+          "type": "string",
+          "description": "信号名称"
+        },
+        "args": {
+          "type": "array",
+          "description": "信号参数（可选）"
+        }
+      },
+      "required": [
+        "nodePath",
+        "signalName"
+      ]
+    }
+  },
+  {
+    "name": "start_signal_monitoring",
+    "description": "监听信号事件（设置过滤器）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "signalName": {
+          "type": "string",
+          "description": "要监听的信号名称（为空则监听所有）"
+        },
+        "maxEvents": {
+          "type": "integer",
+          "description": "最大记录数量"
+        }
+      }
+    }
+  },
+  {
+    "name": "stop_signal_monitoring",
+    "description": "停止监听信号事件（查看统计）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "get_signal_events",
+    "description": "获取已记录的信号事件（支持时间范围查询）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "description": "获取最近 N 条事件"
+        },
+        "nodePath": {
+          "type": "string",
+          "description": "按节点路径过滤（可选）"
+        },
+        "signalName": {
+          "type": "string",
+          "description": "按信号名称过滤（可选）"
+        },
+        "startTime": {
+          "type": "integer",
+          "description": "开始时间 Unix 时间戳（可选）"
+        },
+        "endTime": {
+          "type": "integer",
+          "description": "结束时间 Unix 时间戳（可选）"
+        }
+      }
+    }
+  },
+  {
+    "name": "clear_signal_events",
+    "description": "清空信号事件记录",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "get_logs",
+    "description": "获取游戏日志输出",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "description": "日志数量，默认 50"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_logs_filtered",
+    "description": "获取过滤后的日志",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "description": "日志级别: error/warning/info/debug"
+        },
+        "messagePattern": {
+          "type": "string",
+          "description": "消息内容过滤"
+        },
+        "startTime": {
+          "type": "integer",
+          "description": "开始时间戳"
+        },
+        "endTime": {
+          "type": "integer",
+          "description": "结束时间戳"
+        },
+        "maxCount": {
+          "type": "integer",
+          "description": "最大返回数量"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_log_stats",
+    "description": "获取日志统计信息",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "export_logs",
+    "description": "导出所有日志到文件",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "导出路径（可选）"
+        }
+      }
+    }
+  },
+  {
+    "name": "clear_logs",
+    "description": "清空日志缓冲区",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "add_custom_log",
+    "description": "添加自定义日志条目",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "日志消息"
+        },
+        "level": {
+          "type": "string",
+          "description": "日志级别: info/warning/error/debug"
+        }
+      },
+      "required": [
+        "message"
+      ]
+    }
+  },
+  {
+    "name": "get_performance_stats",
+    "description": "获取性能统计信息（FPS、内存、节点数等）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "take_screenshot",
+    "description": "截取游戏画面",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "savePath": {
+          "type": "string",
+          "description": "保存路径（可选），如 user://screenshot.png"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_time",
+    "description": "获取当前时间和引擎运行时间",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "save_node_as_scene",
+    "description": "将指定节点及其子节点保存为 .tscn 场景文件，用于离线分析排查",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "nodePath": {
+          "type": "string",
+          "description": "要保存的节点路径，例如 /root/Main/GameWorld/Player"
+        },
+        "includeChildren": {
+          "type": "boolean",
+          "description": "是否包含所有子节点（无限层级），默认 true"
+        },
+        "savePath": {
+          "type": "string",
+          "description": "保存路径（可选），默认 user://mcp_saved_nodes/<nodeName>_<timestamp>.tscn"
+        },
+        "returnContent": {
+          "type": "boolean",
+          "description": "是否在返回值中包含文件内容文本，默认 true"
+        }
+      },
+      "required": [
+        "nodePath"
+      ]
+    }
+  }
+]
