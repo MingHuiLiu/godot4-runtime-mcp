@@ -12,7 +12,8 @@ public sealed record RecordedNode(
     Dictionary<string, SnapshotValue> DiagnosticProperties, List<SnapshotIssue> Issues);
 public sealed record RecordedResource(
     string ResourceId, string ClassName, string? ResourcePath, string? Sha256,
-    bool LocalToScene, Dictionary<string, SnapshotValue> Properties, List<SnapshotIssue> Issues);
+    bool LocalToScene, Dictionary<string, SnapshotValue> Properties, List<SnapshotIssue> Issues,
+    string? ScriptPath = null);
 public sealed record SceneCheckpoint(
     int SchemaVersion, string SnapshotId, string SessionId, string ProjectId,
     string InstanceId, string RootNodeId, long StartedPhysicsFrame, long EndedPhysicsFrame,

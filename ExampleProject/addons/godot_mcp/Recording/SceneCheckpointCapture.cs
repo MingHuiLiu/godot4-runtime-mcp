@@ -41,6 +41,8 @@ public static class SceneCheckpointCapture
                 todo.Push((children[i], item.Node, i, !publicChildren.Contains(children[i])));
         }
 
+        var context = new SnapshotEncodeContext();
+        foreach (var (nativeId, recordedId) in ids) context.ObjectIds[nativeId] = recordedId;
         foreach (var (node, parent, sibling, internalNode) in all)
         {
             string nodeId = ids[node.GetInstanceId()];
@@ -52,21 +54,41 @@ public static class SceneCheckpointCapture
                 issues.Add(new SnapshotIssue("non_exportable", nodeId, null,
                     "Internal engine nodes may not be serializable in an independent scene."));
             var script = node.GetScript().As<Script>();
+            var properties = new Dictionary<string, SnapshotValue>();
+            foreach (var item in node.GetPropertyList())
+            {
+                string name = item["name"].AsString();
+                long usage = item["usage"].AsInt64();
+                if ((usage & (long)PropertyUsageFlags.Storage) == 0 ||
+                    name is "script" || node is LineEdit or TextEdit && name is "text" ||
+                    name.Contains("password", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var encoded = VariantSnapshotCodec.Encode(node.Get(name), context, nodeId, name);
+                if (encoded is not null) properties[name] = encoded;
+            }
             rows.Add(new RecordedNode(
                 nodeId, parentId, sibling, node.Name.ToString(), node.GetClass().ToString(),
                 script?.ResourcePath, string.IsNullOrEmpty(node.SceneFilePath) ? null : node.SceneFilePath,
                 node.GetPath().ToString(), ownerId, internalNode, node.UniqueNameInOwner,
                 node.GetGroups().Select(x => x.ToString()).ToList(),
-                new Dictionary<string, SnapshotValue>(),
+                properties,
                 new Dictionary<string, SnapshotValue>(), issues));
         }
 
-        return new SceneCheckpoint(SnapshotSchema.CurrentVersion, snapshotId,
+        var result = new SceneCheckpoint(SnapshotSchema.CurrentVersion, snapshotId,
             sessionId, projectId, instanceId, ids[root.GetInstanceId()],
             physicsStart, (long)Engine.GetPhysicsFrames(),
             processStart, (long)Engine.GetProcessFrames(),
-            rows, new List<RecordedResource>(),
+            rows, context.Resources,
             new Dictionary<string, SnapshotValue>(),
-            rows.SelectMany(n => n.Issues).ToList());
+            rows.SelectMany(n => n.Issues).Concat(context.Issues).ToList());
+        if (strict && result.Issues.Count > 0)
+            throw new InvalidDataException("capture_limit_exceeded: strict snapshot had unsupported or over-limit fields: " +
+                string.Join(",", result.Issues.Select(i => i.Code)));
+        long encodedBytes = System.Text.Encoding.UTF8.GetByteCount(
+            System.Text.Json.JsonSerializer.Serialize(result, SnapshotJsonContext.Default.SceneCheckpoint));
+        if (encodedBytes > 64L * 1024 * 1024)
+            throw new InvalidDataException("capture_limit_exceeded: checkpoint exceeds 64MiB");
+        return result;
     }
 }
