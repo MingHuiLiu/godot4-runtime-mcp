@@ -36,6 +36,22 @@ public static class CommandLineApp
     private static void Print(PackResult result) =>
         Console.WriteLine(JsonSerializer.Serialize(result, RuntimeJsonContext.Default.PackResult));
 
+    private static async Task<int> Safely(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            return 0;
+        }
+        catch (OperationCanceledException) { return 130; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or
+            HttpRequestException or JsonException or IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine("godot-runtime-cli: " + ex.Message);
+            return 1;
+        }
+    }
+
     private static Option<string?> StringOption(string name, string description = "") =>
         new($"--{name}") { Description = description };
     private static Option<bool> BoolOption(string name, string description = "") =>
@@ -44,11 +60,8 @@ public static class CommandLineApp
     private static void AddSimple(RootCommand root, string name, string description, Func<Task<JsonNode?>> work)
     {
         var command = new Command(name, description);
-        command.SetAction(async (_, _) =>
-        {
-            Print(await work());
-            return 0;
-        });
+        command.SetAction(async (_, _) => await Safely(async () =>
+            Print(await work())));
         root.Subcommands.Add(command);
     }
 
@@ -96,7 +109,7 @@ public static class CommandLineApp
         }
         var json = StringOption("json", "Optional JSON object; explicit flags override it");
         command.Options.Add(json);
-        command.SetAction(async (parsed, _) =>
+        command.SetAction(async (parsed, _) => await Safely(async () =>
         {
             var tokens = new List<string>();
             if (parsed.GetValue(json) is { } raw) { tokens.Add("--json"); tokens.Add(raw); }
@@ -110,8 +123,7 @@ public static class CommandLineApp
             }
             var args = ToolCommandLine.Parse(service, toolName, tokens);
             Print(await service.RunAsync(toolName, args));
-            return 0;
-        });
+        }));
         root.Subcommands.Add(command);
     }
 
@@ -183,13 +195,12 @@ public static class CommandLineApp
         install.Options.Add(versionOpt);
         install.Options.Add(pathOpt);
         install.Options.Add(forceOpt);
-        install.SetAction(async (p, _) =>
+        install.SetAction(async (p, _) => await Safely(async () =>
         {
             Print(await BackendInstaller.InstallAsync(p.GetValue(projectOpt)!,
                 p.GetValue(sourceOpt) ?? "auto", p.GetValue(versionOpt) ?? "latest",
                 p.GetValue(pathOpt), p.GetValue(forceOpt)));
-            return 0;
-        });
+        }));
         root.Subcommands.Add(install);
 
         var pack = new Command("pack", "Package the Godot C# addon into a ZIP");
@@ -197,12 +208,11 @@ public static class CommandLineApp
         var outPath = StringOption("out", "Output ZIP path");
         pack.Options.Add(packPath);
         pack.Options.Add(outPath);
-        pack.SetAction(async (p, _) =>
+        pack.SetAction(async (p, _) => await Safely(async () =>
         {
             Print(await BackendInstaller.PackAsync(p.GetValue(packPath) ?? ".",
                 p.GetValue(outPath) ?? "godot-runtime-addon.zip"));
-            return 0;
-        });
+        }));
         root.Subcommands.Add(pack);
 
         var mcp = new Command("mcp", "Start official MCP stdio transport");
@@ -251,7 +261,7 @@ public static class CommandLineApp
         legacyCall.Options.Add(legacyJson);
         legacyCall.Options.Add(legacyProject);
         legacyCall.Options.Add(legacyInstance);
-        legacyCall.SetAction(async (p, _) =>
+        legacyCall.SetAction(async (p, _) => await Safely(async () =>
         {
             var name = p.GetValue(calledTool);
             var node = JsonNode.Parse(p.GetValue(legacyJson) ?? "{}") as JsonObject
@@ -259,8 +269,7 @@ public static class CommandLineApp
             if (p.GetValue(legacyProject) is { } selectedProject) node["project"] = selectedProject;
             if (p.GetValue(legacyInstance) is { } selectedInstance) node["instance"] = selectedInstance;
             Print(await service.RunAsync(ToolCommandLine.Resolve(service, name!) ?? name!, node));
-            return 0;
-        });
+        }));
         root.Subcommands.Add(legacyCall);
 
         try { return await root.Parse(args).InvokeAsync(); }

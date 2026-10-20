@@ -268,6 +268,12 @@ try
         Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ??
         (File.Exists(homeDotnet) ? homeDotnet : "dotnet"));
     Assert(true, "Official MCP SDK client initializes, lists 51 tools and invokes offline status over stdio");
+    await GodotRuntimeMcp.Tests.McpSdkSmoke.RunHttpAsync(
+        typeof(ToolService).Assembly.Location,
+        Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ??
+        (File.Exists(homeDotnet) ? homeDotnet : "dotnet"));
+    Assert(true, "Official MCP SDK HTTP client authenticates, lists 51 tools and invokes offline status");
+
     Console.WriteLine($"\nALL {passed} ASSERTIONS PASSED");
     return 0;
 }
