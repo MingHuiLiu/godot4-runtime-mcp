@@ -905,6 +905,14 @@
         "strict": {
           "type": "boolean",
           "description": "Reject incomplete checkpoints (default true)"
+        },
+        "captureSignals": {
+          "type": "boolean",
+          "description": "Opt in to delivered zero-argument signals and MCP-emitted parameter signals (default false)"
+        },
+        "captureInput": {
+          "type": "boolean",
+          "description": "Opt in to redacted input device metadata, never Unicode/text (default false)"
         }
       }
     }

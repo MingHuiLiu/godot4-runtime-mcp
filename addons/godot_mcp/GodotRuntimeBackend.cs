@@ -107,6 +107,9 @@ public partial class GodotRuntimeBackend : Node
         _timeline?.Pump();
     }
 
+    // Passive observer. Never SetInputAsHandled or change game input routing.
+    public override void _Input(InputEvent evt) => _timeline?.ObserveInput(evt);
+
     public override void _ExitTree()
     {
         _transport?.Dispose();
@@ -210,7 +213,8 @@ public partial class GodotRuntimeBackend : Node
                 // Opt-in bounded observational runtime timeline.
                 "godot_timeline_start" => Ok(_timeline!.Start(
                     GetStringOrNull(args, "rootPath"), GetInt(args, "sampleEveryFrames", 30),
-                    GetInt(args, "maxSamples", 60), GetBool(args, "strict", true))),
+                    GetInt(args, "maxSamples", 60), GetBool(args, "strict", true),
+                    GetBool(args, "captureSignals", false), GetBool(args, "captureInput", false))),
                 "godot_timeline_stop" => Ok(_timeline!.Stop(GetString(args, "sessionId"))),
                 "godot_timeline_status" => Ok(_timeline!.Status(GetString(args, "sessionId"))),
 
@@ -916,7 +920,13 @@ public partial class GodotRuntimeBackend : Node
             if (args == null || args.Count == 0)
                 node.EmitSignal(signalName);
             else
-                node.EmitSignal(signalName, args.Select(a => ToVar(a)).ToArray());
+            {
+                var emitted = args.Select(a => ToVar(a)).ToArray();
+                node.EmitSignal(signalName, emitted);
+                // The existing auto-monitor sees zero-argument signals. For MCP-emitted
+                // parameter signals only, record the actual successful invocation.
+                _timeline?.ObserveSignal(node, signalName, emitted);
+            }
 
             LogInfo($"Signal emitted: {nodePath}.{signalName}");
             return Ok(new { emitted = true, nodePath, signal = signalName, argCount = args?.Count ?? 0 });
@@ -1387,6 +1397,7 @@ public partial class GodotRuntimeBackend : Node
             Args = args?.Select(a => a?.ToString() ?? "null").ToList() ?? new List<string>()
         };
 
+        _timeline?.ObserveSignal(node, signalName);
         _signalEventsBuffer.Add(evt);
 
         if (_signalEventsBuffer.Count > MaxSignalEventsBufferSize)

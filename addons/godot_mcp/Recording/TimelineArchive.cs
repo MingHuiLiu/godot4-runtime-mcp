@@ -112,7 +112,8 @@ public static class TimelineArchive
 
     public static async Task<TimelineSessionStatus> CompleteAsync(
         string directory, string terminalStatus, CancellationToken ct,
-        string? code = null, string? message = null, int skippedSamples = 0)
+        string? code = null, string? message = null, int skippedSamples = 0,
+        int skippedObservedEvents = 0)
     {
         if (terminalStatus is not ("stopped" or "completed" or "failed"))
             throw new ArgumentException("timeline_invalid_terminal_status");
@@ -120,7 +121,8 @@ public static class TimelineArchive
         if (previous.Status != "running")
             throw new InvalidDataException("timeline_terminal_state: session is no longer running");
         var next = previous with { Status = terminalStatus, Code = code, Message = message,
-            DroppedSamples = previous.DroppedSamples + Math.Max(0, skippedSamples) };
+            DroppedSamples = previous.DroppedSamples + Math.Max(0, skippedSamples),
+            DroppedObservedEvents = previous.DroppedObservedEvents + Math.Max(0, skippedObservedEvents) };
         await PublishStatusAsync(directory, next, ct);
         return next;
     }

@@ -12,6 +12,8 @@ public static class TimelineToolTests
         var begin = tools.CatalogModels.Single(x => x.Name == "godot_timeline_start");
         assert(begin.InputSchema.Properties.ContainsKey("sampleEveryFrames") &&
                begin.InputSchema.Properties.ContainsKey("maxSamples") &&
+               begin.InputSchema.Properties.ContainsKey("captureSignals") &&
+               begin.InputSchema.Properties.ContainsKey("captureInput") &&
                begin.InputSchema.Properties.ContainsKey("project") &&
                begin.InputSchema.Properties.ContainsKey("instance"),
             "Recording controls retain project/instance routing and bounded sample configuration");

@@ -10,22 +10,38 @@ GODOT_MCP_CONFIG_DIR="$DATA" "$GODOT_BIN" --headless --path "$ROOT/ExampleProjec
     --scene res://TimelineProbe.tscn --quit-after 1500 > "$LOG" 2>&1 || { cat "$LOG"; exit 1; }
 cat "$LOG"
 grep -q 'TIMELINE_PROBE_PASS:' "$LOG"
+grep -q 'TIMELINE_EVENT_PASS:' "$LOG"
+grep -q 'TIMELINE_REDACTION_PASS:' "$LOG"
+grep -q 'TIMELINE_SCOPE_PASS:' "$LOG"
+grep -q 'TIMELINE_OVERFLOW_PASS:' "$LOG"
+grep -q 'TIMELINE_OPTOUT_PASS:' "$LOG"
+grep -q 'TIMELINE_STOP_FLUSH_PASS:' "$LOG"
 grep -q 'TIMELINE_STOP_PASS:' "$LOG"
 
 # Query the real sessions with a distinct CLI process, after the Godot game quits.
 dotnet build "$ROOT/RuntimeHost/RuntimeHost.csproj" -c Release > "$LOG" 2>&1 || { cat "$LOG"; exit 1; }
 HOST="$ROOT/RuntimeHost/bin/Release/net8.0/GodotRuntimeMcp.dll"
-GODOT_MCP_CONFIG_DIR="$DATA" dotnet "$HOST" godot-timeline-sessions \
+run_host() {
+    if [ -n "${GODOT_RUNTIME_NATIVE_HOST:-}" ]; then
+        GODOT_MCP_CONFIG_DIR="$DATA" "$GODOT_RUNTIME_NATIVE_HOST" "$@"
+    else
+        GODOT_MCP_CONFIG_DIR="$DATA" dotnet "$HOST" "$@"
+    fi
+}
+
+run_host godot-timeline-sessions \
     --project "$ROOT/ExampleProject" > "$LOG"
 COMPLETED=$(python3 - "$LOG" <<'PY'
 import json,sys
 sessions=json.load(open(sys.argv[1]))
-assert len(sessions)==2, sessions
+assert len(sessions)==3, sessions
 assert {s['status'] for s in sessions}=={'completed','stopped'}, sessions
+completed=next(s for s in sessions if s['status']=='completed')
+assert completed['captureInput'] and completed['captureSignals'] and completed['droppedObservedEvents']>0, sessions
 print(next(s['sessionId'] for s in sessions if s['status']=='completed'))
 PY
 )
-GODOT_MCP_CONFIG_DIR="$DATA" dotnet "$HOST" godot-timeline-events \
+run_host godot-timeline-events \
     --project "$ROOT/ExampleProject" --session-id "$COMPLETED" \
     --offset 0 --limit 10 > "$LOG"
 python3 - "$LOG" <<'PY'
@@ -34,8 +50,17 @@ result=json.load(open(sys.argv[1]))
 assert result['total']==4, result
 kinds={ev['kind'] for batch in result['items'] for ev in batch['events']}
 assert {'node_added','node_renamed','node_removed'} <= kinds,kinds
+observed=[e for batch in result['items'] for e in batch.get('observedEvents',[])]
+assert {('input','key'),('signal','renamed')} <= {(e['kind'],e['name']) for e in observed}, observed
+impacts=[e for e in observed if e['kind']=='signal' and e['name']=='impact']
+assert len(impacts)==1 and impacts[0]['fields']['arg0']['data']==9 and impacts[0]['fields']['arg1']['type']=='redacted', impacts
+assert 'SHOULD_NEVER_BE_PERSISTED' not in json.dumps(result),result
+assert not any(e['name']=='outside_scope' for e in observed),observed
+assert sum(batch.get('droppedObservedEvents',0) for batch in result['items'])>0,result
+assert not any('unicode' in name.lower() or 'text' in name.lower()
+               for e in observed for name in e['fields']), observed
 PY
-GODOT_MCP_CONFIG_DIR="$DATA" dotnet "$HOST" godot-timeline-info \
+run_host godot-timeline-info \
     --project "$ROOT/ExampleProject" --session-id "$COMPLETED" > "$LOG"
 python3 - "$LOG" <<'PY'
 import json,sys

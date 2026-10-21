@@ -1,6 +1,7 @@
 using Godot;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace GodotRuntimeMcp.Recording;
 
@@ -19,10 +20,13 @@ public sealed class RuntimeTimelineController
         public bool Busy = true;
         public bool StopRequested;
         public int PendingDrops;
+        public int DroppedObserved;
+        public readonly List<ObservedRuntimeEvent> PendingObserved = new();
         public long Ticks;
         public SceneCheckpoint? Previous;
     }
 
+    private const int MaxObservedPerBatch = 256;
     private readonly Node _backend;
     private readonly Func<string?>? _instance;
     private readonly object _sync = new();
@@ -36,7 +40,8 @@ public sealed class RuntimeTimelineController
 
     public TimelineSessionStatus Start(
         string? rootPath, int sampleEveryFrames = 30,
-        int maxSamples = 60, bool strict = true)
+        int maxSamples = 60, bool strict = true,
+        bool captureSignals = false, bool captureInput = false)
     {
         lock (_sync)
         {
@@ -57,7 +62,8 @@ public sealed class RuntimeTimelineController
             var state = new TimelineSessionStatus(
                 TimelineDeltaBuilder.SchemaVersion, sessionId, projectId,
                 _instance?.Invoke() ?? "unregistered", "starting",
-                sampleEveryFrames, maxSamples, 0, -1, 0, null);
+                sampleEveryFrames, maxSamples, 0, -1, 0, null,
+                CaptureSignals: captureSignals, CaptureInput: captureInput);
             var record = new Session
             {
                 Status = state, SessionDirectory = dir,
@@ -109,6 +115,103 @@ public sealed class RuntimeTimelineController
         }
     }
 
+    private void PushObserved(string kind, string source, string name,
+        Dictionary<string, SnapshotValue> fields)
+    {
+        lock (_sync)
+        {
+            var current = _latest;
+            if (current is null || current.StopRequested ||
+                current.Status.Status is not ("running" or "starting") ||
+                (kind == "signal" ? !current.Status.CaptureSignals : !current.Status.CaptureInput))
+                return;
+            if (current.PendingObserved.Count == MaxObservedPerBatch)
+            {
+                current.DroppedObserved++;
+                return;
+            }
+            current.PendingObserved.Add(new ObservedRuntimeEvent(kind,
+                source[..Math.Min(source.Length, 512)], name[..Math.Min(name.Length, 128)],
+                (long)Engine.GetProcessFrames(), (long)Engine.GetPhysicsFrames(),
+                DateTimeOffset.UtcNow, fields));
+        }
+    }
+
+    /// <summary>Only callback-delivered signals are captured; arbitrary signals may not be subscribed.</summary>
+    public void ObserveSignal(Node node, string signalName, params Variant[] arguments)
+    {
+        if (!GodotObject.IsInstanceValid(node) || !node.IsInsideTree()) return;
+        string path = node.GetPath().ToString();
+        lock (_sync)
+        {
+            var current = _latest;
+            if (current is null || !current.Status.CaptureSignals || current.StopRequested ||
+                current.Status.Status is not ("running" or "starting")) return;
+            string? boundary = string.IsNullOrEmpty(current.RootPath)
+                ? _backend.GetTree().CurrentScene?.GetPath().ToString()
+                : current.RootPath;
+            if (string.IsNullOrEmpty(boundary) ||
+                (path != boundary &&
+                 !path.StartsWith(boundary.TrimEnd('/') + "/", StringComparison.Ordinal)))
+                return;
+        }
+        var fields = new Dictionary<string, SnapshotValue>();
+        for (int i = 0; i < Math.Min(arguments.Length, 4); i++)
+        {
+            var arg = arguments[i];
+            fields["arg" + i] = arg.VariantType switch
+            {
+                Variant.Type.Int => new SnapshotValue("int64", JsonValue.Create(arg.AsInt64())),
+                Variant.Type.Bool => new SnapshotValue("bool", JsonValue.Create(arg.AsBool())),
+                Variant.Type.Float when double.IsFinite(arg.AsDouble()) =>
+                    new SnapshotValue("float64", JsonValue.Create(arg.AsDouble())),
+                _ => new SnapshotValue("redacted") // Never archive text/Unicode or Resource objects.
+            };
+        }
+        if (arguments.Length > 4) fields["extraArguments"] = new SnapshotValue("redacted");
+        PushObserved("signal", path, signalName, fields);
+    }
+
+    /// <summary>Capture bounded event metadata, never Unicode characters or text payloads.</summary>
+    public void ObserveInput(InputEvent evt)
+    {
+        Dictionary<string, SnapshotValue> fields = new();
+        static SnapshotValue Int(long number) => new("int64", JsonValue.Create(number));
+        static SnapshotValue Bool(bool state) => new("bool", JsonValue.Create(state));
+        string name;
+        switch (evt)
+        {
+            case InputEventKey key:
+                name = "key";
+                fields["keycode"] = Int((long)key.Keycode);
+                fields["physicalKeycode"] = Int((long)key.PhysicalKeycode);
+                fields["pressed"] = Bool(key.Pressed);
+                fields["echo"] = Bool(key.Echo);
+                // key.Unicode, label, layout/IME preedit intentionally NEVER serialized.
+                break;
+            case InputEventMouseButton mouse:
+                name = "mouse_button";
+                fields["button"] = Int((long)mouse.ButtonIndex);
+                fields["pressed"] = Bool(mouse.Pressed);
+                fields["x"] = Int((long)mouse.Position.X);
+                fields["y"] = Int((long)mouse.Position.Y);
+                break;
+            case InputEventMouseMotion motion:
+                name = "mouse_motion";
+                fields["deltaX"] = Int((long)motion.Relative.X);
+                fields["deltaY"] = Int((long)motion.Relative.Y);
+                break;
+            case InputEventJoypadButton joy:
+                name = "joy_button";
+                fields["button"] = Int((long)joy.ButtonIndex);
+                fields["pressed"] = Bool(joy.Pressed);
+                break;
+            default:
+                return; // Exclude unbounded text, unknown and synthetic payloads.
+        }
+        PushObserved("input", "/viewport", name, fields);
+    }
+
     public void Pump()
     {
         Session? session;
@@ -127,7 +230,8 @@ public sealed class RuntimeTimelineController
             if (session.StopRequested)
             {
                 session.Busy = true;
-                finish = true;
+                finish = session.PendingObserved.Count == 0 ||
+                    session.Status.SampleCount >= session.Status.MaxSamples;
             }
             else
             {
@@ -160,8 +264,17 @@ public sealed class RuntimeTimelineController
                     new List<TimelineEvent>(), session.PendingDrops)
                 : TimelineDeltaBuilder.Compare(session.Previous, snapshot,
                     state.SampleCount, snapshot.EndedProcessFrame);
-            batch = batch with { DroppedSamples = session.PendingDrops };
-            session.PendingDrops = 0;
+            lock (_sync)
+            {
+                batch = batch with {
+                    DroppedSamples = session.PendingDrops,
+                    ObservedEvents = session.PendingObserved.ToList(),
+                    DroppedObservedEvents = session.DroppedObserved
+                };
+                session.PendingObserved.Clear();
+                session.DroppedObserved = 0;
+                session.PendingDrops = 0;
+            }
             _ = Task.Run(async () =>
             {
                 try
@@ -199,9 +312,20 @@ public sealed class RuntimeTimelineController
     {
         try
         {
+            int dropped;
+            int skipped;
+            lock (_sync)
+            {
+                dropped = session.PendingObserved.Count + session.DroppedObserved;
+                skipped = session.PendingDrops;
+                session.PendingObserved.Clear();
+                session.DroppedObserved = 0;
+                session.PendingDrops = 0;
+            }
             var finished = await TimelineArchive.CompleteAsync(
                 Path.Combine(session.SessionDirectory, "timeline"),
-                state, CancellationToken.None, skippedSamples: session.PendingDrops);
+                state, CancellationToken.None, skippedSamples: skipped,
+                skippedObservedEvents: dropped);
             lock (_sync) { session.Status = finished; session.Busy = false; }
         }
         catch (Exception ex) { Fail(session, "timeline_stop_failed", ex.Message); }
