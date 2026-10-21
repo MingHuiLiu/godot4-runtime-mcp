@@ -214,7 +214,8 @@ public partial class GodotRuntimeBackend : Node
                 "godot_timeline_start" => Ok(_timeline!.Start(
                     GetStringOrNull(args, "rootPath"), GetInt(args, "sampleEveryFrames", 30),
                     GetInt(args, "maxSamples", 60), GetBool(args, "strict", true),
-                    GetBool(args, "captureSignals", false), GetBool(args, "captureInput", false))),
+                    GetBool(args, "captureSignals", false), GetBool(args, "captureInput", false),
+                    GetBool(args, "captureScreenshots", false))),
                 "godot_timeline_stop" => Ok(_timeline!.Stop(GetString(args, "sessionId"))),
                 "godot_timeline_status" => Ok(_timeline!.Status(GetString(args, "sessionId"))),
 

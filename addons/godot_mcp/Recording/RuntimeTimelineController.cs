@@ -41,7 +41,8 @@ public sealed class RuntimeTimelineController
     public TimelineSessionStatus Start(
         string? rootPath, int sampleEveryFrames = 30,
         int maxSamples = 60, bool strict = true,
-        bool captureSignals = false, bool captureInput = false)
+        bool captureSignals = false, bool captureInput = false,
+        bool captureScreenshots = false)
     {
         lock (_sync)
         {
@@ -63,7 +64,8 @@ public sealed class RuntimeTimelineController
                 TimelineDeltaBuilder.SchemaVersion, sessionId, projectId,
                 _instance?.Invoke() ?? "unregistered", "starting",
                 sampleEveryFrames, maxSamples, 0, -1, 0, null,
-                CaptureSignals: captureSignals, CaptureInput: captureInput);
+                CaptureSignals: captureSignals, CaptureInput: captureInput,
+                CaptureScreenshots: captureScreenshots);
             var record = new Session
             {
                 Status = state, SessionDirectory = dir,
@@ -212,6 +214,52 @@ public sealed class RuntimeTimelineController
         PushObserved("input", "/viewport", name, fields);
     }
 
+    /// <summary>
+    /// Called only from the game main thread. A viewport screenshot is the most
+    /// recent rendered frame, not necessarily the exact instant of the scene sample.
+    /// Native Image/Texture/Viewport objects never leave this thread.
+    /// </summary>
+    private (byte[]? Png, TimelineFrameImage? Status) CaptureViewportImage()
+    {
+        try
+        {
+            // Godot's headless dummy renderer has no texture readback; attempting
+            // GetImage() produces a native error. Never fabricate a blank PNG.
+            if (DisplayServer.GetName() == "headless")
+                return (null, new TimelineFrameImage("unavailable", null, null,
+                    0, 0, 0, "renderer_unavailable"));
+            var viewport = _backend.GetViewport();
+            if (viewport is null || viewport.GetTexture() is null)
+                return (null, new TimelineFrameImage("unavailable", null, null,
+                    0, 0, 0, "viewport_unavailable"));
+            using var img = viewport.GetTexture().GetImage();
+            if (img is null || img.IsEmpty())
+                return (null, new TimelineFrameImage("unavailable", null, null,
+                    0, 0, 0, "viewport_unavailable"));
+            int width = img.GetWidth();
+            int height = img.GetHeight();
+            if (width < 1 || height < 1)
+                throw new InvalidDataException("empty_frame");
+            if (width > TimelineArchive.MaxDimension || height > TimelineArchive.MaxDimension)
+            {
+                double ratio = Math.Min((double)TimelineArchive.MaxDimension / width,
+                    (double)TimelineArchive.MaxDimension / height);
+                img.Resize(Math.Max(1, (int)Math.Floor(width * ratio)),
+                    Math.Max(1, (int)Math.Floor(height * ratio)), Image.Interpolation.Lanczos);
+            }
+            var png = img.SavePngToBuffer();
+            if (png.Length is < 33 or > TimelineArchive.MaxPngBytes)
+                return (null, new TimelineFrameImage("unavailable", null, null,
+                    0, 0, 0, "image_byte_limit"));
+            return (png, null);
+        }
+        catch (Exception)
+        {
+            return (null, new TimelineFrameImage("unavailable", null, null,
+                0, 0, 0, "capture_failed"));
+        }
+    }
+
     public void Pump()
     {
         Session? session;
@@ -264,6 +312,9 @@ public sealed class RuntimeTimelineController
                     new List<TimelineEvent>(), session.PendingDrops)
                 : TimelineDeltaBuilder.Compare(session.Previous, snapshot,
                     state.SampleCount, snapshot.EndedProcessFrame);
+            var screenshot = session.Status.CaptureScreenshots
+                ? CaptureViewportImage()
+                : (Png: (byte[]?)null, Status: (TimelineFrameImage?)null);
             lock (_sync)
             {
                 batch = batch with {
@@ -282,6 +333,22 @@ public sealed class RuntimeTimelineController
                     await CheckpointArchive.CommitAsync(
                         Path.Combine(session.SessionDirectory, snapshotId),
                         snapshot, CancellationToken.None);
+                    TimelineFrameImage? frame = screenshot.Status;
+                    if (screenshot.Png is not null)
+                    {
+                        try
+                        {
+                            frame = await TimelineArchive.WriteImageAsync(
+                                Path.Combine(session.SessionDirectory, "timeline"),
+                                batch.SampleIndex, screenshot.Png, CancellationToken.None);
+                        }
+                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                        {
+                            frame = new TimelineFrameImage("unavailable", null, null,
+                                0, 0, 0, "image_write_failed");
+                        }
+                    }
+                    batch = batch with { Screenshot = frame };
                     var saved = await TimelineArchive.AppendAsync(
                         Path.Combine(session.SessionDirectory, "timeline"),
                         batch, CancellationToken.None);

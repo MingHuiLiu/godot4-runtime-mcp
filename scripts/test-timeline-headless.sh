@@ -11,6 +11,7 @@ GODOT_MCP_CONFIG_DIR="$DATA" "$GODOT_BIN" --headless --path "$ROOT/ExampleProjec
 cat "$LOG"
 grep -q 'TIMELINE_PROBE_PASS:' "$LOG"
 grep -q 'TIMELINE_EVENT_PASS:' "$LOG"
+grep -q 'TIMELINE_SCREENSHOT_PASS:' "$LOG"
 grep -q 'TIMELINE_REDACTION_PASS:' "$LOG"
 grep -q 'TIMELINE_SCOPE_PASS:' "$LOG"
 grep -q 'TIMELINE_OVERFLOW_PASS:' "$LOG"

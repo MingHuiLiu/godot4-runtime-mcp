@@ -913,6 +913,10 @@
         "captureInput": {
           "type": "boolean",
           "description": "Opt in to redacted input device metadata, never Unicode/text (default false)"
+        },
+        "captureScreenshots": {
+          "type": "boolean",
+          "description": "Opt in to private PNG screenshots aligned to samples, maximum 1024 px and 512 KiB per image (default false)"
         }
       }
     }

@@ -28,7 +28,7 @@ public partial class TimelineProbe : Node
         _world = new Node2D { Name = "TimelineWorld" };
         AddChild(_world);
         var started = _controller.Start(_world.GetPath().ToString(), 1, 4, true,
-            captureSignals: true, captureInput: true);
+            captureSignals: true, captureInput: true, captureScreenshots: true);
         if (started.Status is not ("starting" or "running"))
         {
             GD.PushError("TIMELINE_PROBE_FAIL: start " + started.Code + ":" + started.Message);
@@ -114,6 +114,22 @@ public partial class TimelineProbe : Node
                 string timeline = Path.Combine(home, "recordings", current.ProjectId,
                     current.SessionId, "timeline");
                 var events = TimelineArchive.ReadPage(timeline, 0, 10);
+                // Real headless Godot has a dummy renderer. A missing frame must
+                // be explicit; on a graphical renderer verify every captured PNG.
+                foreach (var sample in events.Items)
+                {
+                    if (sample.Screenshot?.State == "captured")
+                        if (TimelineArchive.ReadImage(timeline, sample).Length < 33)
+                            throw new Exception("Invalid captured viewport PNG");
+                    if (sample.Screenshot?.State != "captured" &&
+                        sample.Screenshot?.State != "unavailable")
+                        throw new Exception("Screenshot state absent instead of unavailable");
+                }
+                if (!current.CaptureScreenshots ||
+                    current.ScreenshotCount + current.SkippedScreenshots != events.Total)
+                    throw new Exception("Screenshot metadata/counts do not match sample records");
+                GD.Print("TIMELINE_SCREENSHOT_PASS: " + current.ScreenshotCount +
+                    " captures, " + current.SkippedScreenshots + " renderer/unavailable markers");
                 var kinds = events.Items.SelectMany(x => x.Events).Select(x => x.Kind).ToHashSet();
                 var observed = events.Items.SelectMany(x => x.ObservedEvents ?? new()).ToList();
                 int dropped = events.Items.Sum(x => x.DroppedObservedEvents);

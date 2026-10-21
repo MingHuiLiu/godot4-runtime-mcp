@@ -14,6 +14,7 @@ public static class TimelineToolTests
                begin.InputSchema.Properties.ContainsKey("maxSamples") &&
                begin.InputSchema.Properties.ContainsKey("captureSignals") &&
                begin.InputSchema.Properties.ContainsKey("captureInput") &&
+               begin.InputSchema.Properties.ContainsKey("captureScreenshots") &&
                begin.InputSchema.Properties.ContainsKey("project") &&
                begin.InputSchema.Properties.ContainsKey("instance"),
             "Recording controls retain project/instance routing and bounded sample configuration");
