@@ -62,17 +62,20 @@ public partial class ExportWorker : Node
         if (Directory.Exists(output) && Directory.EnumerateFileSystemEntries(output).Any())
             throw new IOException("unsafe_output_path: destination already exists and is not empty");
 
-        // Only BCL archive I/O runs on a worker thread; never block Godot's synchronization
-        // context on an async read, as it would deadlock the headless worker's _Ready().
-        var snapshot = Task.Run(() => CheckpointArchive.ReadAsync(input, CancellationToken.None))
-            .GetAwaiter().GetResult();
-        var build = SnapshotSceneBuilder.Build(snapshot, request.Strict);
+        SceneBuildResult? build = null;
         Node? checkForCleanup = null;
-        var issues = build.Issues.ToList();
-        int expected = snapshot.Nodes.Count(n => !n.IsInternal);
+        var issues = new List<SnapshotIssue>();
+        int expected = 0;
         int actual = 0;
         try
         {
+            // Only BCL archive I/O runs on a worker thread; never block Godot's
+            // synchronization context on async reads from _Ready().
+            var snapshot = Task.Run(() => CheckpointArchive.ReadAsync(input,
+                CancellationToken.None)).GetAwaiter().GetResult();
+            expected = snapshot.Nodes.Count(n => !n.IsInternal);
+            build = SnapshotSceneBuilder.Build(snapshot, request.Strict);
+            issues.AddRange(build.Issues);
             using var packed = new PackedScene();
             if (packed.Pack(build.Root) != Error.Ok)
                 throw new InvalidDataException("export_pack_failed");
@@ -126,11 +129,15 @@ public partial class ExportWorker : Node
             string scenePath = Path.Combine(output, "scene.tscn");
             if (File.Exists(scenePath)) File.Delete(scenePath);
             string reportPath = Path.Combine(output, "reconstruction_report.json");
-            if (issues.Count == 0)
-                issues.Add(new SnapshotIssue("export_validation_failed", null, null, ex.Message));
+            string code = ex.Message.Contains("resource_dependency_changed", StringComparison.Ordinal)
+                ? "resource_dependency_changed" :
+                ex.Message.Contains("snapshot_corrupt", StringComparison.Ordinal) ? "snapshot_corrupt" :
+                ex.Message.Contains("snapshot_incomplete", StringComparison.Ordinal) ? "snapshot_incomplete" :
+                "export_validation_failed";
+            issues.Add(new SnapshotIssue(code, null, null, ex.Message));
             var failure = new SceneExportResult(
                 "failed", null, null, null, reportPath, "partial", issues, expected, actual,
-                "export_validation_failed", ex.Message);
+                code, ex.Message);
             File.WriteAllText(reportPath, JsonSerializer.Serialize(
                 failure, SnapshotJsonContext.Default.SceneExportResult));
             return Task.FromResult(failure);
@@ -139,7 +146,8 @@ public partial class ExportWorker : Node
         {
             if (checkForCleanup is not null && GodotObject.IsInstanceValid(checkForCleanup))
                 checkForCleanup.Free();
-            if (GodotObject.IsInstanceValid(build.Root)) build.Root.Free();
+            if (build is not null && GodotObject.IsInstanceValid(build.Root))
+                build.Root.Free();
         }
     }
 

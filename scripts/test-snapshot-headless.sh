@@ -83,3 +83,21 @@ grep -q '"status":"failed"' "$CYCLIC_DIR/reconstruction_report.json"
 grep -q '"code":"export_validation_failed"' "$CYCLIC_DIR/reconstruction_report.json"
 test ! -f "$CYCLIC_DIR/scene.tscn"
 echo 'SNAPSHOT_EXPECTED_FAILURE_PASS: cyclic Resource reported as failed with diagnostic file'
+
+# Early failure (file missing before SceneBuilder starts) still requires a durable report.
+DEPENDENCY_JOB="$TEMP_RECORDING_DIR/dependency-job.json"
+DEPENDENCY_OUTPUT="$TEMP_RECORDING_DIR/dependency-output"
+printf '{"snapshotDirectory":"%s","exportDirectory":"%s","strict":true}\n' \
+    "$TEMP_RECORDING_DIR/fixtures/external_snapshot" "$DEPENDENCY_OUTPUT" > "$DEPENDENCY_JOB"
+if GODOT_MCP_EXPORT_WORKER=1 GODOT_MCP_CONFIG_DIR="$TEMP_RECORDING_DIR" \
+    "$GODOT_BIN" --headless --path "$ROOT/ExampleProject" \
+    --scene res://addons/godot_mcp/Recording/export_worker.tscn \
+    -- --snapshot-job "$DEPENDENCY_JOB" > "$OUTPUT" 2>&1; then
+    echo 'FAIL: missing dependency export falsely returned success' >&2
+    exit 1
+fi
+test -s "$DEPENDENCY_OUTPUT/reconstruction_report.json"
+grep -q '"status":"failed"' "$DEPENDENCY_OUTPUT/reconstruction_report.json"
+grep -q 'resource_dependency_changed' "$DEPENDENCY_OUTPUT/reconstruction_report.json"
+test ! -f "$DEPENDENCY_OUTPUT/scene.tscn"
+echo 'SNAPSHOT_MISSING_DEPENDENCY_PASS: early validation creates failed export report'

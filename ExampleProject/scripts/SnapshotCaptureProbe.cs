@@ -188,6 +188,9 @@ public partial class SnapshotCaptureProbe : Node
                 externalLoaded = ResourceLoader.Load<RectangleShape2D>(resourcePath);
                 collisionTwin.Shape = externalLoaded;
                 var pinned = SceneCheckpointCapture.Capture(game, "external", "session", "project", "instance", true);
+                System.Threading.Tasks.Task.Run(() => CheckpointArchive.CommitAsync(
+                    System.IO.Path.Combine(fixtureRoot, "fixtures", "external_snapshot"),
+                    pinned, System.Threading.CancellationToken.None)).GetAwaiter().GetResult();
                 var external = pinned.Resources.Single(r => r.ResourcePath == resourcePath);
                 if (external.Sha256 is null || external.Sha256.Length != 64)
                     throw new Exception("External Resource missing SHA-256 file hash");
