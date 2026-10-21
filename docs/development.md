@@ -39,8 +39,8 @@ godot --headless --path ExampleProject
 ## macOS Native AOT
 
 ```sh
-./scripts/publish-release.sh v3.1.0 osx-arm64
-./scripts/publish-release.sh v3.1.0 osx-x64
+./scripts/publish-release.sh v3.2.0 osx-arm64
+./scripts/publish-release.sh v3.2.0 osx-x64
 ```
 
 产物位于忽略 Git 的 `dist/TAG/`，包含 `godot-runtime-cli` 和 `godot-mcp-server` 两个独立可执行文件的 tar.gz、后端插件 ZIP 与 SHA256SUMS。Native AOT 原生输出已是单文件，**不要**同时设置 `PublishSingleFile=true`。构建和测试不会自动创建 GitHub Release。版本号统一由 `RuntimeHost/HostVersion.cs` 定义，打包脚本会拒绝与宿主实际版本不符的标签；正式发布前须去掉 `-dev` 并验证对应构建。
@@ -81,7 +81,7 @@ Run `sh scripts/test-timeline-headless.sh` with a local Godot 4 Mono executable 
 
 ### Static visual timeline and renderer-dependent PNGs
 
-`dotnet run --project Tests/Tests.csproj -c Release` validates private PNG checksum/header/dimensions, image-byte budget, traversal protection and HTML escaping/CSP. `sh scripts/test-timeline-headless.sh` verifies the Godot capture flag, honest `renderer_unavailable` fallback and the separate offline CLI's `godot-timeline-export-gallery`. Headless Godot uses a dummy renderer without texture readback: **automated tests do not prove screenshot visual fidelity under a normal graphics driver**. To manually confirm, run the example project with a window and an active camera, start a timeline with `--capture-screenshots true`, stop or complete it, then inspect `htmlPath` returned by `godot-timeline-export-gallery`. Browser gallery is static/offline; do not publish or share captured user screen content without authorization.
+`dotnet run --project Tests/Tests.csproj -c Release` validates private PNG checksum/header/dimensions, image-byte budget, traversal protection and HTML escaping/CSP. `sh scripts/test-timeline-headless.sh` verifies the Godot capture flag, honest `renderer_unavailable` fallback and the separate offline CLI's `godot-timeline-export-gallery`. Headless Godot uses a dummy renderer without texture readback: **the Headless path alone does not prove screenshot visual fidelity under a normal graphics driver**. To verify GUI rendering, run `sh scripts/test-timeline-graphical.sh`, or open the example project with a window and an active camera, start a timeline with `--capture-screenshots true`, stop or complete it, then inspect `htmlPath` returned by `godot-timeline-export-gallery`. Browser gallery is static/offline; do not publish or share captured user screen content without authorization.
 
 ## Verified observed-state replay
 

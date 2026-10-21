@@ -72,6 +72,18 @@ public partial class TimelineProbe : Node
                 // A full buffer must record an explicit loss count, not allocate without bound.
                 for (int attempt = 0; attempt < 300; attempt++)
                     _controller.ObserveInput(key);
+                // Opt-in key capture must suppress password/text editor focus.
+                var secretEntry = new LineEdit { Name = "SecretEditor", Secret = true };
+                _world.AddChild(secretEntry);
+                secretEntry.GrabFocus();
+                using (var secretKey = new InputEventKey { Keycode = Key.Z,
+                    PhysicalKeycode = Key.Z, Pressed = true, Unicode = 90 })
+                {
+                    if (!secretEntry.HasFocus()) throw new Exception("Secret editor not focused");
+                    _controller.ObserveInput(secretKey);
+                }
+                secretEntry.ReleaseFocus();
+                secretEntry.Free();
                 _inputSent = true;
                 _added = true;
             }
@@ -152,6 +164,11 @@ public partial class TimelineProbe : Node
                     " captures, " + current.SkippedScreenshots + " renderer/unavailable markers");
                 var kinds = events.Items.SelectMany(x => x.Events).Select(x => x.Kind).ToHashSet();
                 var observed = events.Items.SelectMany(x => x.ObservedEvents ?? new()).ToList();
+                if (observed.Any(e => e.Kind == "input" && e.Name == "key" &&
+                    e.Fields.TryGetValue("keycode", out var code) &&
+                    code.Data?.ToJsonString() == "90"))
+                    throw new Exception("Sensitive text-entry keycode was captured");
+                GD.Print("TIMELINE_TEXT_FOCUS_PASS: text input keystrokes omitted");
                 int dropped = events.Items.Sum(x => x.DroppedObservedEvents);
                 if (dropped <= 0 || dropped != current.DroppedObservedEvents)
                     throw new Exception("Event backpressure was not preserved in status/batches: " + dropped);

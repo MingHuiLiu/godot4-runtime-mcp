@@ -61,7 +61,7 @@ These paths are illustrative, not guaranteed nodes. Inspect the actual tree befo
 
 ### Record and reconstruct a scene checkpoint (source build)
 
-Use these commands only with a compiled, trusted Godot 4 .NET project and a backend version that advertises the snapshot tools. The existing published v3.1.0 release may not contain these additions.
+Use these commands only with a compiled, trusted Godot 4 .NET project and a backend version that advertises the snapshot tools. The public v3.1.0 release does not contain these additions; use a verified v3.2.0 build or newer.
 
 ```sh
 "$CLI" godot-snapshot-capture --project "/absolute/path/to/game" --strict true

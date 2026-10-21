@@ -181,6 +181,12 @@ public sealed class RuntimeTimelineController
         static SnapshotValue Int(long number) => new("int64", JsonValue.Create(number));
         static SnapshotValue Bool(bool state) => new("bool", JsonValue.Create(state));
         string name;
+        // Keycodes can reveal what someone typed even without storing Unicode.
+        // Do not capture keys while the scene is editing text (especially secrets).
+        // Other game-specific sensitive controls still require caller discretion.
+        if (evt is InputEventKey &&
+            _backend.GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit)
+            return;
         switch (evt)
         {
             case InputEventKey key:

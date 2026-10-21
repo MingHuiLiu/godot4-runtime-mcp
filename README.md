@@ -52,9 +52,9 @@ godot-runtime-cli godot-snapshot-export-status --project /absolute/path/to/game 
 
 导出的文件包括 `scene.tscn`、`runtime_state.json`、`dependencies.json` 与 `reconstruction_report.json`。严格导出会比对重新加载的节点、属性和 Resource 引用，发现缺失则拒绝报告完整成功。外部 Resource 还会保留源文件 SHA-256、检查内存是否偏离磁盘，并在导出时验证文件未发生变化。Godot 原生 `.tscn` 不保证支持循环 Resource、任意 C# 私有变量、物理内部状态或确定性回放；不提供确定性回放。
 
-**发布说明：** 上述新功能目前属于源代码实施分支，不能假设 GitHub 上既有的 v3.1.0 发行包已包含它。使用前需构建含此功能的 CLI 并更新游戏插件。
+**版本说明：** Runtime Black Box 全功能已纳入 v3.2.0 源码与本地构建。已发布的 GitHub v3.1.0 仍不包含这些功能；发布 v3.2.0 之前请从本仓库构建 CLI 与后端插件，且不要混用新旧版。
 
-## Runtime Black Box：连续观察时间线（源码开发版）
+## Runtime Black Box：连续观察时间线
 
 在已安装并运行的 Godot 4 .NET 项目中，可按指定间隔**主动启动有界采样录制**，得到一段包含 Scene Checkpoint 和节点变化事件的时间线。每个周期保存可验证的 Checkpoint，随后计算节点新增、移除、移动、改名、组/脚本/Owner、已支持属性和 Resource 属性的可观察变化；同时保留帧序号、前后 Snapshot ID、跳过的采样周期数量。
 
@@ -83,7 +83,7 @@ godot-runtime-cli godot-timeline-export-gallery --project /absolute/path/to/game
 
 归档位于原项目对应的私有录制目录内。事件是**两个实际观察点之间的状态差异**，不等于所有中间瞬时发生的事件；因此这不是输入/信号全量追踪、逐帧视频，也不是确定性时间回放。若游戏变化快于采样或文件写入速度，可能漏掉中间状态，报告会保留丢失采样数量。可从时间线中的 Snapshot ID 再用离线场景导出工具恢复具体采样点的 `.tscn`。
 
-## Runtime Black Box：独立输入回放与状态一致性验证（开发分支）
+## Runtime Black Box：独立输入回放与状态一致性验证
 
 新实现的**受限回放**在独立的 Godot 4 .NET/Mono 进程中从录制的第一个 Scene Checkpoint 重建测试场景，再按记录的相对 Process 帧间隔重新注入**键盘、鼠标按钮和手柄按钮**元数据；每到记录的观察点，重新采集可持久化节点属性并比对拓扑、组和 Resource 图。游戏退出后仍可请求回放，AI 获取到的是 `matched` / `diverged` / `inconclusive` / `failed` 的可检查诊断报告，而**不是原游戏进程的任意时间旅行**。
 
