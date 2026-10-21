@@ -19,6 +19,7 @@ namespace GodotRuntimeMcp.Recording;
 [JsonSerializable(typeof(SceneExportDependencies))]
 [JsonSerializable(typeof(SceneExportResult))]
 [JsonSerializable(typeof(TimelineBatch))]
+[JsonSerializable(typeof(TimelineFrameImage))]
 [JsonSerializable(typeof(ObservedRuntimeEvent))]
 [JsonSerializable(typeof(List<ObservedRuntimeEvent>))]
 [JsonSerializable(typeof(TimelineEvent))]

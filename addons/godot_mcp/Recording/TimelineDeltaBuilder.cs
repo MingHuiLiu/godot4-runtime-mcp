@@ -13,18 +13,24 @@ public sealed record ObservedRuntimeEvent(
     string Kind, string SourcePath, string Name, long ProcessFrame, long PhysicsFrame,
     DateTimeOffset Utc, Dictionary<string, SnapshotValue> Fields);
 
+/// <summary>Validated optional PNG for a particular committed observed sample.</summary>
+public sealed record TimelineFrameImage(string State, string? FileName, string? Sha256,
+    int Width, int Height, int ByteLength, string? Code = null);
+
 public sealed record TimelineBatch(
     int SchemaVersion, string SessionId, int SampleIndex,
     string FromSnapshotId, string ToSnapshotId, long ObservedProcessFrame,
     List<TimelineEvent> Events, int DroppedSamples = 0,
-    List<ObservedRuntimeEvent>? ObservedEvents = null, int DroppedObservedEvents = 0);
+    List<ObservedRuntimeEvent>? ObservedEvents = null, int DroppedObservedEvents = 0,
+    TimelineFrameImage? Screenshot = null);
 
 public sealed record TimelineSessionStatus(
     int SchemaVersion, string SessionId, string ProjectId, string InstanceId,
     string Status, int SampleEveryFrames, int MaxSamples, int SampleCount,
     int LastCommittedIndex, int DroppedSamples, string? LastSnapshotId,
     string? Code = null, string? Message = null,
-    bool CaptureSignals = false, bool CaptureInput = false, int DroppedObservedEvents = 0);
+    bool CaptureSignals = false, bool CaptureInput = false, int DroppedObservedEvents = 0,
+    bool CaptureScreenshots = false, int ScreenshotCount = 0, int SkippedScreenshots = 0);
 
 public sealed record TimelineEventPage(
     string SessionId, int Total, int Offset, int Limit, List<TimelineBatch> Items);

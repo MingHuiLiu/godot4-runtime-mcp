@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -11,6 +12,83 @@ namespace GodotRuntimeMcp.Recording;
 public static class TimelineArchive
 {
     private const int MaxBatchBytes = 2 * 1024 * 1024;
+    public const int MaxPngBytes = 512 * 1024;
+    public const int MaxDimension = 1024;
+    public const long MaxSessionImageBytes = 32L * 1024 * 1024;
+    private static readonly byte[] PngMagic = [137, 80, 78, 71, 13, 10, 26, 10];
+
+    private static (int Width, int Height) PngDimensions(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length < 33 || !bytes[..8].SequenceEqual(PngMagic) ||
+            BinaryPrimitives.ReadInt32BigEndian(bytes.Slice(8, 4)) != 13 ||
+            !bytes.Slice(12, 4).SequenceEqual("IHDR"u8))
+            throw new InvalidDataException("timeline_image_corrupt: invalid PNG header");
+        int width = BinaryPrimitives.ReadInt32BigEndian(bytes.Slice(16, 4));
+        int height = BinaryPrimitives.ReadInt32BigEndian(bytes.Slice(20, 4));
+        if (width is < 1 or > MaxDimension || height is < 1 or > MaxDimension)
+            throw new InvalidDataException("timeline_image_limit: excessive screenshot dimensions");
+        return (width, height);
+    }
+
+    /// <summary>Atomic owner-private PNG write; called before publishing the batch marker.</summary>
+    public static async Task<TimelineFrameImage> WriteImageAsync(
+        string directory, int sampleIndex, byte[] png, CancellationToken ct)
+    {
+        if (sampleIndex is < 0 or >= 1000 || png.Length > MaxPngBytes || png.Length == 0)
+            throw new InvalidDataException("timeline_image_limit: invalid image index/size");
+        var (width, height) = PngDimensions(png);
+        string framesDir = Path.Combine(directory, "frames");
+        if (Directory.Exists(framesDir) && new DirectoryInfo(framesDir).LinkTarget is not null)
+            throw new InvalidDataException("timeline_image_corrupt: symlink frames directory");
+        Directory.CreateDirectory(framesDir);
+        Secure(framesDir, true);
+        string filename = sampleIndex.ToString("D6") + ".png";
+        string dest = Path.Combine(framesDir, filename);
+        if (File.Exists(dest) || new FileInfo(dest).LinkTarget is not null)
+            throw new IOException("timeline_image_already_exists");
+        long used = Directory.EnumerateFiles(framesDir, "*.png", SearchOption.TopDirectoryOnly)
+            .Sum(path => new FileInfo(path).Length);
+        if (used + png.Length > MaxSessionImageBytes)
+            throw new InvalidDataException("timeline_image_budget_exceeded");
+        string temp = dest + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllBytesAsync(temp, png, ct);
+            Secure(temp, false);
+            File.Move(temp, dest);
+            string hash = Convert.ToHexString(SHA256.HashData(png)).ToLowerInvariant();
+            return new TimelineFrameImage("captured", filename, hash,
+                width, height, png.Length);
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+    }
+
+    /// <summary>Never trust disk filenames or PNG bytes without batch-bound hash verification.</summary>
+    public static byte[] ReadImage(string directory, TimelineBatch batch)
+    {
+        var image = batch.Screenshot;
+        string expected = batch.SampleIndex.ToString("D6") + ".png";
+        if (image is null || image.State != "captured" || image.FileName != expected ||
+            image.Sha256 is null || image.Sha256.Length != 64 ||
+            image.ByteLength is < 33 or > MaxPngBytes)
+            throw new InvalidDataException("timeline_image_corrupt: invalid screenshot metadata");
+        string frames = Path.Combine(directory, "frames");
+        if (!Directory.Exists(frames) || new DirectoryInfo(frames).LinkTarget is not null)
+            throw new InvalidDataException("timeline_image_corrupt: missing/private frame directory");
+        string path = Path.Combine(frames, expected);
+        if (!File.Exists(path) || new FileInfo(path).LinkTarget is not null)
+            throw new InvalidDataException("timeline_image_corrupt: missing or symlink screenshot");
+        byte[] bytes = File.ReadAllBytes(path);
+        if (bytes.Length != image.ByteLength || bytes.Length > MaxPngBytes ||
+            !string.Equals(Convert.ToHexString(SHA256.HashData(bytes)), image.Sha256,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("timeline_image_corrupt: screenshot hash mismatch");
+        var (width, height) = PngDimensions(bytes);
+        if (width != image.Width || height != image.Height)
+            throw new InvalidDataException("timeline_image_corrupt: screenshot size mismatch");
+        return bytes;
+    }
+
 
     private static void Validate(TimelineSessionStatus value)
     {
@@ -72,6 +150,10 @@ public static class TimelineArchive
             before.SampleCount >= before.MaxSamples)
             throw new InvalidDataException("timeline_sequence_invalid");
 
+        if (batch.Screenshot is { State: "captured" })
+            _ = ReadImage(directory, batch);
+        else if (batch.Screenshot is { State: not "unavailable" })
+            throw new InvalidDataException("timeline_image_corrupt: invalid screenshot state");
         byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
             batch, SnapshotJsonContext.Default.TimelineBatch));
         if (bytes.Length > MaxBatchBytes)
@@ -99,7 +181,9 @@ public static class TimelineArchive
                 LastCommittedIndex = batch.SampleIndex,
                 LastSnapshotId = batch.ToSnapshotId,
                 DroppedSamples = before.DroppedSamples + batch.DroppedSamples,
-                DroppedObservedEvents = before.DroppedObservedEvents + batch.DroppedObservedEvents
+                DroppedObservedEvents = before.DroppedObservedEvents + batch.DroppedObservedEvents,
+                ScreenshotCount = before.ScreenshotCount + (batch.Screenshot?.State == "captured" ? 1 : 0),
+                SkippedScreenshots = before.SkippedScreenshots + (batch.Screenshot?.State == "unavailable" ? 1 : 0)
             };
             await PublishStatusAsync(directory, next, ct);
             return next;
@@ -152,6 +236,10 @@ public static class TimelineArchive
                     batch.SessionId != status.SessionId ||
                     batch.SchemaVersion != TimelineDeltaBuilder.SchemaVersion)
                     throw new InvalidDataException("timeline_corrupt: batch metadata mismatch");
+                if (batch.Screenshot is { State: "captured" })
+                    _ = ReadImage(directory, batch);
+                else if (batch.Screenshot is { State: not "unavailable" })
+                    throw new InvalidDataException("timeline_image_corrupt: unsupported screenshot state");
                 rows.Add(batch);
             }
             catch (JsonException e)
