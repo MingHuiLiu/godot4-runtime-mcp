@@ -18,6 +18,7 @@
     <Compile Include="../addons/godot_mcp/Recording/CheckpointArchive.cs" Link="Recording/CheckpointArchive.cs" />
     <Compile Include="../addons/godot_mcp/Recording/TimelineDeltaBuilder.cs" Link="Recording/TimelineDeltaBuilder.cs" />
     <Compile Include="../addons/godot_mcp/Recording/TimelineArchive.cs" Link="Recording/TimelineArchive.cs" />
+    <Compile Include="../addons/godot_mcp/Recording/ReplayPlan.cs" Link="Recording/ReplayPlan.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../addons/godot_mcp/**/*.*">
