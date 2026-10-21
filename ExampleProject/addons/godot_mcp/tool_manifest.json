@@ -883,5 +883,62 @@
         "jobId"
       ]
     }
+  },
+  {
+    "name": "godot_timeline_start",
+    "description": "Start bounded opt-in runtime scene timeline (observed sampling, not replay)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rootPath": {
+          "type": "string",
+          "description": "Optional absolute scene root NodePath"
+        },
+        "sampleEveryFrames": {
+          "type": "integer",
+          "description": "Process frames between observations, 1..600 (default 30)"
+        },
+        "maxSamples": {
+          "type": "integer",
+          "description": "Maximum checkpoints in this session, 1..240 (default 60)"
+        },
+        "strict": {
+          "type": "boolean",
+          "description": "Reject incomplete checkpoints (default true)"
+        }
+      }
+    }
+  },
+  {
+    "name": "godot_timeline_stop",
+    "description": "Stop an active runtime timeline recording and persist terminal state",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Recording session ID"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    }
+  },
+  {
+    "name": "godot_timeline_status",
+    "description": "Read active runtime timeline session status and sample counts",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Recording session ID"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    }
   }
 ]

@@ -67,6 +67,7 @@ public partial class GodotRuntimeBackend : Node
     // Every running game registers an independent, authenticated loopback endpoint.
     private GodotRuntimeTransport? _transport;
     private CaptureJobController? _capture;
+    private RuntimeTimelineController? _timeline;
 
     public override void _Ready()
     {
@@ -79,6 +80,7 @@ public partial class GodotRuntimeBackend : Node
         _instance = this;
         ProcessMode = ProcessModeEnum.Always;
         _capture = new CaptureJobController(this, () => _transport?.InstanceId);
+        _timeline = new RuntimeTimelineController(this, () => _transport?.InstanceId);
         InitializeLogFile();
         InitializeSignalEventsFile();
         StartGlobalSignalMonitoring();
@@ -102,6 +104,7 @@ public partial class GodotRuntimeBackend : Node
     {
         _transport?.Pump(delta);
         _capture?.Pump();
+        _timeline?.Pump();
     }
 
     public override void _ExitTree()
@@ -204,6 +207,12 @@ public partial class GodotRuntimeBackend : Node
                     GetStringOrNull(args, "rootPath"), GetBool(args, "strict", true),
                     GetInt(args, "maxNodes", 2000))),
                 "godot_snapshot_job_status" => Ok(_capture!.GetStatus(GetString(args, "jobId"))),
+                // Opt-in bounded observational runtime timeline.
+                "godot_timeline_start" => Ok(_timeline!.Start(
+                    GetStringOrNull(args, "rootPath"), GetInt(args, "sampleEveryFrames", 30),
+                    GetInt(args, "maxSamples", 60), GetBool(args, "strict", true))),
+                "godot_timeline_stop" => Ok(_timeline!.Stop(GetString(args, "sessionId"))),
+                "godot_timeline_status" => Ok(_timeline!.Status(GetString(args, "sessionId"))),
 
                 // Debug
                 "get_logs" => GetLogs(GetInt(args, "count", 50)),

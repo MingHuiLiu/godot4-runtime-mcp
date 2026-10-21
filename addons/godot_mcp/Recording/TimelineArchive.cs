@@ -111,12 +111,13 @@ public static class TimelineArchive
 
     public static async Task<TimelineSessionStatus> CompleteAsync(
         string directory, string terminalStatus, CancellationToken ct,
-        string? code = null, string? message = null)
+        string? code = null, string? message = null, int skippedSamples = 0)
     {
         if (terminalStatus is not ("stopped" or "completed" or "failed"))
             throw new ArgumentException("timeline_invalid_terminal_status");
         var previous = ReadStatus(directory);
-        var next = previous with { Status = terminalStatus, Code = code, Message = message };
+        var next = previous with { Status = terminalStatus, Code = code, Message = message,
+            DroppedSamples = previous.DroppedSamples + Math.Max(0, skippedSamples) };
         await PublishStatusAsync(directory, next, ct);
         return next;
     }
