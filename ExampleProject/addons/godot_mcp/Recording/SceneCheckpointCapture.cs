@@ -66,13 +66,37 @@ public static class SceneCheckpointCapture
                 var encoded = VariantSnapshotCodec.Encode(node.Get(name), context, nodeId, name);
                 if (encoded is not null) properties[name] = encoded;
             }
+            // Explicit, bounded diagnostic state that is not necessarily STORAGE.
+            // These live measurements remain in checkpoint metadata, not .tscn.
+            var diagnostic = new Dictionary<string, SnapshotValue>();
+            void AddDiagnostic(string key, Variant value)
+            {
+                using (value)
+                {
+                    var snapshotValue = VariantSnapshotCodec.Encode(value, context, nodeId, key);
+                    if (snapshotValue is not null) diagnostic[key] = snapshotValue;
+                }
+            }
+            if (node is Node2D node2d)
+            {
+                AddDiagnostic("global_position", Variant.From(node2d.GlobalPosition));
+                AddDiagnostic("global_transform", Variant.From(node2d.GlobalTransform));
+            }
+            if (node is Node3D node3d)
+                AddDiagnostic("global_transform", Variant.From(node3d.GlobalTransform));
+            if (node is CharacterBody2D body2d)
+                AddDiagnostic("velocity", Variant.From(body2d.Velocity));
+            if (node is CharacterBody3D body3d)
+                AddDiagnostic("velocity", Variant.From(body3d.Velocity));
+            if (node is Godot.Timer timer)
+                AddDiagnostic("time_left", Variant.From(timer.TimeLeft));
             rows.Add(new RecordedNode(
                 nodeId, parentId, sibling, node.Name.ToString(), node.GetClass().ToString(),
                 script?.ResourcePath, string.IsNullOrEmpty(node.SceneFilePath) ? null : node.SceneFilePath,
                 node.GetPath().ToString(), ownerId, internalNode, node.UniqueNameInOwner,
                 node.GetGroups().Select(x => x.ToString()).ToList(),
                 properties,
-                new Dictionary<string, SnapshotValue>(), issues));
+                diagnostic, issues));
         }
 
         var result = new SceneCheckpoint(SnapshotSchema.CurrentVersion, snapshotId,

@@ -50,7 +50,7 @@ godot-runtime-cli godot-snapshot-export-tscn --project /absolute/path/to/game --
 godot-runtime-cli godot-snapshot-export-status --project /absolute/path/to/game --job-id EXPORT_JOB_ID
 ```
 
-导出的文件包括 `scene.tscn`、`runtime_state.json`、`dependencies.json` 与 `reconstruction_report.json`。严格导出会比对重新加载的节点、属性和 Resource 引用，发现缺失则拒绝报告完整成功。Godot 原生 `.tscn` 不保证支持循环 Resource、任意 C# 私有变量、物理内部状态或确定性回放；连续时间轴录制是下一阶段工作。
+导出的文件包括 `scene.tscn`、`runtime_state.json`、`dependencies.json` 与 `reconstruction_report.json`。严格导出会比对重新加载的节点、属性和 Resource 引用，发现缺失则拒绝报告完整成功。外部 Resource 还会保留源文件 SHA-256、检查内存是否偏离磁盘，并在导出时验证文件未发生变化。Godot 原生 `.tscn` 不保证支持循环 Resource、任意 C# 私有变量、物理内部状态或确定性回放；连续时间轴录制是下一阶段工作。
 
 **发布说明：** 上述新功能目前属于源代码实施分支，不能假设 GitHub 上既有的 v3.1.0 发行包已包含它。使用前需构建含此功能的 CLI 并更新游戏插件。
 

@@ -66,3 +66,5 @@ godot --headless --path ExampleProject
 `scripts/test-snapshot-headless.sh` 覆盖动态 Owner-null 节点、循环/共享 Resource 的内存重建、容量限制、异步落盘、独立进程的 `.tscn` 严格加载验证，以及游戏退出后由 CLI 启动的离线导出。脚本使用独立临时录制目录，避免覆盖用户项目文件。继续扩展时先加失败测试，再实现。
 
 默认输出位于 `GODOT_MCP_CONFIG_DIR/recordings/<project-id>/<session-id>/<snapshot-id>/` 下；离线导出存储于项目录制目录的 `exports/<job-id>/output/`。如需使用另一个 Godot Mono 程序，通过 `GODOT_BIN` 或 CLI 的 `--godot-binary` 指定。
+
+场景探针还覆盖整数向量/矩形、Plane/Projection、PackedVector4 数组、非有限值拒绝、总编码字节上限、资源数量限制、外部资源的文件哈希与未保存内存更改。引入新的 Godot RefCounted 测试资源时，务必断开测试数据构造出的循环并在退出引擎前释放临时资源；测试脚本应重复执行验证 Godot 的原生退出稳定性。

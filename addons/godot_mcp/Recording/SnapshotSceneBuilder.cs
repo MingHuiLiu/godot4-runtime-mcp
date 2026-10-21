@@ -24,6 +24,16 @@ public static class SnapshotSceneBuilder
             {
                 try
                 {
+                    if (!string.IsNullOrEmpty(item.ResourcePath))
+                    {
+                        var dependencyIssues = new List<SnapshotIssue>();
+                        string? currentHash = VariantSnapshotCodec.HashResourceDependency(
+                            item.ResourcePath, dependencyIssues, item.ResourceId, "ResourcePath");
+                        if (item.Sha256 is null || currentHash is null ||
+                            !string.Equals(item.Sha256, currentHash, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidDataException("resource_dependency_changed: " +
+                                item.ResourcePath);
+                    }
                     Resource? resource = null;
                     if (!string.IsNullOrEmpty(item.ScriptPath))
                         resource = GD.Load<CSharpScript>(item.ScriptPath)?.New().AsGodotObject() as Resource;
@@ -35,7 +45,10 @@ public static class SnapshotSceneBuilder
                 }
                 catch (Exception ex)
                 {
-                    issues.Add(new SnapshotIssue("resource_unavailable", null, item.ResourceId, ex.Message));
+                    issues.Add(new SnapshotIssue(
+                        ex.Message.Contains("resource_dependency_changed", StringComparison.Ordinal)
+                            ? "resource_dependency_changed" : "resource_unavailable",
+                        null, item.ResourceId, ex.Message));
                 }
             }
 
@@ -143,12 +156,19 @@ public static class SnapshotSceneBuilder
             "string_name" => new StringName(d?.GetValue<string>() ?? ""),
             "node_path" => new NodePath(d?.GetValue<string>() ?? ""),
             "vector2" => new Vector2(F("x"), F("y")),
+            "vector2i" => new Vector2I((int)N("x"), (int)N("y")),
+            "vector3i" => new Vector3I((int)N("x"), (int)N("y"), (int)N("z")),
+            "vector4i" => new Vector4I((int)N("x"), (int)N("y"), (int)N("z"), (int)N("w")),
             "vector3" => new Vector3(F("x"), F("y"), F("z")),
             "vector4" => new Vector4(F("x"), F("y"), F("z"), F("w")),
             "rect2" => new Rect2(F("x"), F("y"), F("width"), F("height")),
+            "rect2i" => new Rect2I((int)N("x"), (int)N("y"), (int)N("width"), (int)N("height")),
+            "plane" => new Plane(ReadV3(d?["normal"]), F("d")),
             "color" => new Color(F("r"), F("g"), F("b"), F("a")),
             "quaternion" => new Quaternion(F("x"), F("y"), F("z"), F("w")),
             "basis" => new Basis(ReadV3(d?["x"]), ReadV3(d?["y"]), ReadV3(d?["z"])),
+            "projection" => new Projection(ReadV4(d?["x"]), ReadV4(d?["y"]),
+                ReadV4(d?["z"]), ReadV4(d?["w"])),
             "transform2d" => new Transform2D(ReadV2(d?["x"]), ReadV2(d?["y"]), ReadV2(d?["origin"])),
             "transform3d" => new Transform3D(
                 new Basis(ReadV3(d?["basis"]?["x"]), ReadV3(d?["basis"]?["y"]), ReadV3(d?["basis"]?["z"])),
@@ -173,6 +193,10 @@ public static class SnapshotSceneBuilder
     private static Vector3 ReadV3(JsonNode? obj) =>
         new((float)ReadNumber(obj?["x"]), (float)ReadNumber(obj?["y"]),
             (float)ReadNumber(obj?["z"]));
+
+    private static Vector4 ReadV4(JsonNode? node) =>
+        new((float)ReadNumber(node?["x"]), (float)ReadNumber(node?["y"]),
+            (float)ReadNumber(node?["z"]), (float)ReadNumber(node?["w"]));
 
     private static SnapshotValue ReadValue(JsonNode? json) =>
         json?.Deserialize(SnapshotJsonContext.Default.SnapshotValue)
@@ -213,6 +237,7 @@ public static class SnapshotSceneBuilder
             "string" => Variant.From(items.Select(v => v?.GetValue<string>() ?? "").ToArray()),
             "vector2" => Variant.From(items.Select(ReadV2).ToArray()),
             "vector3" => Variant.From(items.Select(ReadV3).ToArray()),
+            "vector4" => Variant.From(items.Select(ReadV4).ToArray()),
             "color" => Variant.From(items.Select(v => new Color(
                 (float)ReadNumber(v?["r"]),
                 (float)ReadNumber(v?["g"]),

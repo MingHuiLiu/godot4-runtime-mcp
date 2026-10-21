@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Godot;
 using System.Linq;
+using System.Security.Cryptography;
 
 namespace GodotRuntimeMcp.Recording;
 
@@ -13,6 +14,8 @@ public sealed class SnapshotEncodeContext
     public int MaxDepth { get; init; } = 32;
     public int MaxResources { get; init; } = 4096;
     public int MaxFieldBytes { get; init; } = 256 * 1024;
+    public long MaxTotalBytes { get; init; } = 64L * 1024 * 1024;
+    public long EncodedBytes { get; internal set; }
 }
 
 public static class VariantSnapshotCodec
@@ -38,13 +41,19 @@ public static class VariantSnapshotCodec
             "StringName" => new("string_name", JsonValue.Create(value.AsStringName().ToString())),
             "NodePath" => new("node_path", JsonValue.Create(value.AsNodePath().ToString())),
             "Vector2" => EncodeVector2(value.AsVector2()),
+            "Vector2I" => EncodeVector2I(value.AsVector2I()),
+            "Vector3I" => EncodeVector3I(value.AsVector3I()),
+            "Vector4I" => EncodeVector4I(value.AsVector4I()),
             "Vector3" => EncodeVector3(value.AsVector3()),
             "Color" => EncodeColor(value.AsColor()),
             "Rect2" => EncodeRect2(value.AsRect2()),
+            "Rect2I" => EncodeRect2I(value.AsRect2I()),
+            "Plane" => EncodePlane(value.AsPlane()),
             "Transform2D" => EncodeTransform2D(value.AsTransform2D()),
             "Transform3D" => EncodeTransform3D(value.AsTransform3D()),
             "Quaternion" => EncodeQuaternion(value.AsQuaternion()),
             "Basis" => EncodeBasis(value.AsBasis()),
+            "Projection" => EncodeProjection(value.AsProjection()),
             "Vector4" => EncodeVector4(value.AsVector4()),
             "Aabb" => EncodeAabb(value.AsAabb()),
             "Array" => EncodeArray(value.AsGodotArray(), context, nodeId, propertyName, depth),
@@ -58,6 +67,7 @@ public static class VariantSnapshotCodec
             "PackedVector2Array" => Pack("vector2", value.AsVector2Array().Select(x => EncodeVector2(x).Data)),
             "PackedVector3Array" => Pack("vector3", value.AsVector3Array().Select(x => EncodeVector3(x).Data)),
             "PackedColorArray" => Pack("color", value.AsColorArray().Select(x => EncodeColor(x).Data)),
+            "PackedVector4Array" => Pack("vector4", value.AsVector4Array().Select(x => EncodeVector4(x).Data)),
             "Object" => EncodeObject(value.AsGodotObject(), context, nodeId, propertyName, depth),
             _ => null
         };
@@ -68,23 +78,59 @@ public static class VariantSnapshotCodec
                 propertyName, "Unsupported Variant type: " + value.VariantType));
             return null;
         }
-        if (encoded.Data is { } data && System.Text.Encoding.UTF8.GetByteCount(data.ToJsonString()) > context.MaxFieldBytes)
+        if (HasNonFiniteNumber(encoded.Data))
         {
-            context.Issues.Add(new SnapshotIssue("capture_limit_exceeded", nodeId,
-                propertyName, "Field exceeds configured byte limit"));
+            context.Issues.Add(new SnapshotIssue("non_finite_variant", nodeId,
+                propertyName, "Cannot round-trip NaN/Infinity via JSON"));
             return null;
         }
+        long bytes = encoded.Data is null ? (encoded.RefId?.Length ?? 0) :
+            System.Text.Encoding.UTF8.GetByteCount(encoded.Data.ToJsonString());
+        if (bytes > context.MaxFieldBytes || bytes > context.MaxTotalBytes - context.EncodedBytes)
+        {
+            context.Issues.Add(new SnapshotIssue("capture_limit_exceeded", nodeId,
+                propertyName, "Field or cumulative encoded byte budget exceeded"));
+            return null;
+        }
+        context.EncodedBytes += bytes;
         return encoded;
     }
 
+    private static bool HasNonFiniteNumber(JsonNode? value) => value switch
+    {
+        JsonValue scalar =>
+            (scalar.TryGetValue<double>(out double d) && !double.IsFinite(d)) ||
+            (scalar.TryGetValue<float>(out float f) && !float.IsFinite(f)),
+        JsonArray arr => arr.Any(HasNonFiniteNumber),
+        JsonObject obj => obj.Any(pair => HasNonFiniteNumber(pair.Value)),
+        _ => false
+    };
+
     private static SnapshotValue EncodeVector2(Vector2 v) =>
         new("vector2", new JsonObject { ["x"] = v.X, ["y"] = v.Y });
+
+    private static SnapshotValue EncodeVector2I(Vector2I v) =>
+        new("vector2i", new JsonObject { ["x"] = v.X, ["y"] = v.Y });
+
+    private static SnapshotValue EncodeVector3I(Vector3I v) =>
+        new("vector3i", new JsonObject { ["x"] = v.X, ["y"] = v.Y, ["z"] = v.Z });
+
+    private static SnapshotValue EncodeVector4I(Vector4I v) =>
+        new("vector4i", new JsonObject { ["x"] = v.X, ["y"] = v.Y, ["z"] = v.Z, ["w"] = v.W });
 
     private static SnapshotValue EncodeVector3(Vector3 v) =>
         new("vector3", new JsonObject { ["x"] = v.X, ["y"] = v.Y, ["z"] = v.Z });
 
     private static SnapshotValue EncodeColor(Color v) =>
         new("color", new JsonObject { ["r"] = v.R, ["g"] = v.G, ["b"] = v.B, ["a"] = v.A });
+
+    private static SnapshotValue EncodePlane(Plane v) =>
+        new("plane", new JsonObject { ["normal"] = EncodeVector3(v.Normal).Data,
+            ["d"] = v.D });
+
+    private static SnapshotValue EncodeRect2I(Rect2I v) =>
+        new("rect2i", new JsonObject { ["x"] = v.Position.X, ["y"] = v.Position.Y,
+            ["width"] = v.Size.X, ["height"] = v.Size.Y });
 
     private static SnapshotValue EncodeRect2(Rect2 v) =>
         new("rect2", new JsonObject {
@@ -111,6 +157,11 @@ public static class VariantSnapshotCodec
             ["y"] = EncodeVector3(v.Y).Data,
             ["z"] = EncodeVector3(v.Z).Data
         });
+
+    private static SnapshotValue EncodeProjection(Projection p) =>
+        new("projection", new JsonObject { ["x"] = EncodeVector4(p.X).Data,
+            ["y"] = EncodeVector4(p.Y).Data, ["z"] = EncodeVector4(p.Z).Data,
+            ["w"] = EncodeVector4(p.W).Data });
 
     private static SnapshotValue EncodeQuaternion(Quaternion v) =>
         new("quaternion", new JsonObject {
@@ -172,6 +223,82 @@ public static class VariantSnapshotCodec
         return new SnapshotValue("dict", entries);
     }
 
+    private static void CheckExternalResourceProperties(Resource memory, string path,
+        Dictionary<string, SnapshotValue> expected, List<SnapshotIssue> issues,
+        string nodeId, string property)
+    {
+        Resource? fresh = null;
+        try
+        {
+            fresh = ResourceLoader.Load<Resource>(path, cacheMode: ResourceLoader.CacheMode.Ignore);
+            if (fresh is null || ReferenceEquals(fresh, memory))
+            {
+                issues.Add(new SnapshotIssue("external_resource_unverifiable", nodeId, property,
+                    "Cannot inspect an independent on-disk copy of " + path));
+                return;
+            }
+            var temporary = new SnapshotEncodeContext();
+            foreach (var (name, wanted) in expected)
+            {
+                // Comparing IDs across different object graphs is not meaningful.
+                // Reject complex references conservatively instead of guessing.
+                if (wanted.Type is "resource_ref" or "node_ref" ||
+                    wanted.Data?.ToJsonString().Contains("resource_ref", StringComparison.Ordinal) == true)
+                {
+                    issues.Add(new SnapshotIssue("external_resource_unverifiable", nodeId,
+                        property + "." + name, "Nested external Resource needs explicit restoration"));
+                    continue;
+                }
+                var actual = Encode(fresh.Get(name), temporary, nodeId, property + "." + name);
+                if (actual is null || actual.Type != wanted.Type ||
+                    !JsonNode.DeepEquals(actual.Data, wanted.Data))
+                    issues.Add(new SnapshotIssue("external_resource_mutated", nodeId,
+                        property + "." + name, "In-memory Resource differs from " + path));
+            }
+            if (temporary.Issues.Count != 0)
+                issues.Add(new SnapshotIssue("external_resource_unverifiable", nodeId, property,
+                    "On-disk copy has unsupported values"));
+        }
+        catch (Exception ex)
+        {
+            issues.Add(new SnapshotIssue("external_resource_unverifiable", nodeId, property,
+                path + ": " + ex.Message));
+        }
+        finally
+        {
+            if (fresh is not null && !ReferenceEquals(fresh, memory))
+                fresh.Dispose();
+        }
+    }
+
+    /// <summary>SHA-256 of the underlying project file, ignoring Godot's ::subresource suffix.</summary>
+    public static string? HashResourceDependency(string resourcePath,
+        List<SnapshotIssue> issues, string nodeId, string property)
+    {
+        string path = resourcePath.Split(new[] { "::" }, 2, StringSplitOptions.None)[0];
+        if (!path.StartsWith("res://", StringComparison.Ordinal) &&
+            !path.StartsWith("user://", StringComparison.Ordinal))
+        {
+            issues.Add(new SnapshotIssue("resource_dependency_unavailable", nodeId, property,
+                "Cannot verify dependency outside res:// and user://: " + resourcePath));
+            return null;
+        }
+        try
+        {
+            string resolved = ProjectSettings.GlobalizePath(path);
+            if (!File.Exists(resolved))
+                throw new FileNotFoundException("Resource dependency file missing", resolved);
+            using var stream = File.OpenRead(resolved);
+            return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            issues.Add(new SnapshotIssue("resource_dependency_unavailable", nodeId, property,
+                resourcePath + ": " + ex.Message));
+            return null;
+        }
+    }
+
     private static SnapshotValue? EncodeObject(
         GodotObject? obj, SnapshotEncodeContext context,
         string nodeId, string propertyName, int depth)
@@ -199,9 +326,24 @@ public static class VariantSnapshotCodec
         resourceId = "r_" + (context.Resources.Count + 1).ToString("D6");
         context.ObjectIds[instanceId] = resourceId;
         var properties = new Dictionary<string, SnapshotValue>();
+        string? resourcePath = string.IsNullOrEmpty(resource.ResourcePath)
+            ? null : resource.ResourcePath;
+        // Re-loaded PackedScene subresources may have local:// IDs or absolute
+        // <scene>.tscn::id identifiers. They are inline, not on-disk dependencies.
+        if (resourcePath is not null &&
+            (resourcePath.StartsWith("local://", StringComparison.Ordinal) ||
+             resourcePath.StartsWith("::", StringComparison.Ordinal) ||
+             (resourcePath.Contains("::", StringComparison.Ordinal) &&
+              !resourcePath.StartsWith("res://", StringComparison.Ordinal) &&
+              !resourcePath.StartsWith("user://", StringComparison.Ordinal))))
+            resourcePath = null;
+        string? dependencyHash = null;
+        if (resourcePath is not null)
+            dependencyHash = HashResourceDependency(resourcePath,
+                context.Issues, nodeId, propertyName);
         var row = new RecordedResource(resourceId, resource.GetClass().ToString(),
-            string.IsNullOrEmpty(resource.ResourcePath) ? null : resource.ResourcePath,
-            null, resource.ResourceLocalToScene, properties, new List<SnapshotIssue>(),
+            resourcePath,
+            dependencyHash, resource.ResourceLocalToScene, properties, new List<SnapshotIssue>(),
             resource.GetScript().As<Script>()?.ResourcePath);
         context.Resources.Add(row);
         foreach (var item in resource.GetPropertyList())
@@ -215,6 +357,13 @@ public static class VariantSnapshotCodec
                 $"{propertyName}.{name}", depth + 1);
             if (encoded is not null) properties[name] = encoded;
         }
+        // File hashes prove which dependency was present; they do not prove that a
+        // loaded Resource's in-memory properties still match its disk contents.
+        // Compare serialized scalar fields to a cache-bypassing disk load so a
+        // mutated external resource never receives an unjustified exact snapshot.
+        if (resourcePath is not null && dependencyHash is not null)
+            CheckExternalResourceProperties(resource, resourcePath, properties,
+                context.Issues, nodeId, propertyName);
         return new SnapshotValue("resource_ref", null, resourceId);
     }
 }

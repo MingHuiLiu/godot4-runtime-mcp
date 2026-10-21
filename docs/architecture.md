@@ -55,3 +55,9 @@ Godot 的 `GodotRuntimeTransport` 在线程池接收 JSON，认证后把 `tool`�
 `RuntimeHost/Recording/CheckpointStore.cs` 在游戏停止后提供私有目录校验、分页节点查询。`ExportJobManager` 在同一 Godot .NET 项目下启动新的 Headless 引擎进程，`SnapshotSceneBuilder` 将快照重建成隔离节点树，`ExportWorker` 调用原生 `PackedScene.Pack` / `ResourceSaver.Save`，`SnapshotSceneVerifier` 对重新加载后的树与资源图逐属性验证。严格失败时不得标为 `checkpoint_exact`。工作进程运行可信项目代码，不是安全沙箱；其他项目 Autoload 仍可能被启动。
 
 当前属于按需 Checkpoint MVP，**不具备连续时间轴/Delta 录制、视频录制或确定性 replay**。输出 `.tscn` 是可验证的原生场景资源，不是完整的进程内存快照。
+
+### Snapshot codec 与依赖一致性（第二轮加固）
+
+Checkpoint 的 v1 编码器支持 Godot 标量、StringName/NodePath、二维/三维/四维浮点与整数向量、Rect2/Rect2i、Color、Quaternion、Plane、Basis、Projection、Transform2D/3D、AABB、普通 Array/Dictionary 和 Packed 数组。RID、Callable、Signal 和非有限浮点等无法安全保真的值返回结构化 Issue，严格模式拒绝标记完整。递归深度、单字段长度、资源数量和累计编码字节均有限制。
+
+对于指向 `res://` 或 `user://` 的外部 Resource，采集器记录原始磁盘文件 SHA-256，并将可检查的持久化属性与绕过 ResourceLoader 缓存的独立磁盘实例进行比较；内存差异会产生 `external_resource_mutated`，不能验证嵌套引用时会产生 `external_resource_unverifiable`。恢复前再次检查源文件的 SHA-256，变化产生 `resource_dependency_changed`。此类磁盘读取会运行在游戏主线程，因此极大依赖应按资源预算或项目排除规则处理。隔离进程重建和原生重新加载再次比对节点/组/脚本/资源。外部文件即使已保存快照，也可能因项目代码或资源删除而无法还原，`project_relative` 不等于独立便携包。
