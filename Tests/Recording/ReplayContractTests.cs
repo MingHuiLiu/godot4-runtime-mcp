@@ -45,10 +45,10 @@ public static class ReplayContractTests
         catch (InvalidDataException e) { dropped = e.Message.Contains("replay_incomplete"); }
         assert(dropped, "Lost input events prohibit an exact replay claim");
         bool sparse = false;
-        try { ReplayPlanBuilder.Build(source with { SampleEveryFrames = 5 },
+        try { ReplayPlanBuilder.Build(source with { SampleEveryFrames = 121 },
               new[] { start, next }); }
         catch (InvalidDataException e) { sparse = e.Message.Contains("replay_incomplete"); }
-        assert(sparse, "Sparse sampling is rejected for verified replay profile");
+        assert(sparse, "Unbounded sparse sampling is rejected for verified observation replay");
         bool invalid = false;
         try { ReplayPlanBuilder.Build(source,
               new[] { start, next with { ObservedEvents = new() {

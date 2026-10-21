@@ -27,11 +27,11 @@ public static class ReplayPlanBuilder
         if (status.SchemaVersion != 1)
             throw new NotSupportedException("unsupported_replay_schema");
         if (status.Status is not ("completed" or "stopped") ||
-            !status.CaptureInput || status.SampleEveryFrames != 1 ||
+            !status.CaptureInput || status.SampleEveryFrames is < 1 or > 120 ||
             status.DroppedSamples != 0 || status.DroppedObservedEvents != 0 ||
             status.SampleCount is < 2 or > 60 || batches.Count != status.SampleCount)
             throw new InvalidDataException(
-                "replay_incomplete: input capture, every-frame sampling and no drops are required");
+                "replay_incomplete: supported sampling, input capture and no dropped observations are required");
         if (batches.Count > 60 || batches[^1].ObservedProcessFrame -
             batches[0].ObservedProcessFrame > 1200)
             throw new InvalidDataException("replay_limit: recording window too long");

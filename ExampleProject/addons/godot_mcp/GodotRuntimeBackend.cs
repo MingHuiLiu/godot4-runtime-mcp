@@ -71,7 +71,8 @@ public partial class GodotRuntimeBackend : Node
 
     public override void _Ready()
     {
-        if (System.Environment.GetEnvironmentVariable("GODOT_MCP_EXPORT_WORKER") == "1")
+        if (System.Environment.GetEnvironmentVariable("GODOT_MCP_EXPORT_WORKER") == "1" ||
+            System.Environment.GetEnvironmentVariable("GODOT_MCP_REPLAY_WORKER") == "1")
         {
             SetProcess(false);
             return;
