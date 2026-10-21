@@ -28,7 +28,7 @@ Godot 4 .NET 游戏进程（每进程一个 Backend）
 
 宿主程序集在构建时嵌入 `addons/godot_mcp/tool_manifest.json` 和插件源码。`initialize`、`tools/list`、`godot_status`、`godot_list_projects`、`godot_list_instances`、`godot_setup_guide`、`godot_install_backend` 无须运行中的 Godot 游戏。离线快照查询、场景导出和状态检查直接访问本机持久归档，无须运行中的游戏；其余运行时操作必须查找实时实例并发起本机 HTTP 调用。
 
-`tool_manifest.json` 是 51 项运行时工具 Schema 的唯一源文件；`ToolService.cs` 再补充 14 项宿主管理与离线快照/时间线查询工具。CLI 由 System.CommandLine 2.0.11 提供参数解析，MCP stdio/HTTP 由官方 ModelContextProtocol.AspNetCore 2.2.0 提供协议和传输，HTTP 使用 ASP.NET Core/Kestrel。它们共用 `ToolService.RunAsync`。内部 `ToolDefinition`/`ToolInputSchema` 是强类型模型；只有向 Godot 发任意 Variant 参数时需要 JSON。
+`tool_manifest.json` 是 51 项运行时工具 Schema 的唯一源文件；`ToolService.cs` 再补充 17 项宿主管理与离线快照/时间线/回放工具。CLI 由 System.CommandLine 2.0.11 提供参数解析，MCP stdio/HTTP 由官方 ModelContextProtocol.AspNetCore 2.2.0 提供协议和传输，HTTP 使用 ASP.NET Core/Kestrel。它们共用 `ToolService.RunAsync`。内部 `ToolDefinition`/`ToolInputSchema` 是强类型模型；只有向 Godot 发任意 Variant 参数时需要 JSON。
 
 ## 实例发现与路由
 
@@ -83,3 +83,11 @@ Checkpoint 的 v1 编码器支持 Godot 标量、StringName/NodePath、二维/�
 `RuntimeTimelineController` 仅在明确启用 `captureScreenshots` 时，尝试于 Godot 主线程读取 Viewport 的上一帧渲染图。随后裁切最大边长为 1024 像素并生成 PNG；只有不可变 `byte[]` 离开主线程，`Godot.Image` 和 Viewport 对象均保持在主线程。`TimelineArchive.WriteImageAsync` 在每段会话自己的 `timeline/frames/000000.png` 下原子写入 PNG（<=512 KiB、总量 <=32 MiB），写入 SHA-256 引用到 `TimelineBatch.Screenshot`，并最后发布已有的状态提交标志。`ReadPage` / `ReadImage` 验证文件名、路径/符号链接、哈希和尺寸；篡改帧会拒绝整页结果。Headless dummy renderer 没有 Viewport 读回图像，这种情况下明确写入 `unavailable(renderer_unavailable)` 和跳过计数，不伪造图片。单次 screenshot 采集不是视频流，也可能落后于相应场景快照一个渲染帧。
 
 `TimelineGalleryExporter` 在离线宿主进程中通过项目范围校验读取已提交的图像和状态差异，并显式导出上限为 20 个采样点的**单文件静态 HTML**。HTML 使用 `WebUtility.HtmlEncode` 编码非可信事件文本、禁止脚本和外部资源的 CSP，将验证过的 PNG 以内嵌 data URI 展示。生成的 HTML 按 0600 权限存储在用户私有时间线目录里；用户可打开或分享，但截图/事件内容可能含私密信息，因此默认不生成画廊。新增 `godot_timeline_export_gallery` 作为离线 CLI/MCP 操作，仅返回本地路径及计数，不直接通过 MCP 返回截图字节。对于无图形渲染器的自动化测试，使用“不可用”标识和合成 PNG 归档测试分别覆盖负向与正向管线；仍需在真实图形渲染环境人工检查渲染画面的视觉质量。
+
+## 受限输入重演与观测状态比对
+
+`ReplayPlanBuilder` 是双方共用的纯 C# 检查层，校验已提交的有序时间线、2..60 个快照、最多 1200 原帧窗口、1..120 采样间隔，以及 **没有任何丢失的采样或事件**。对于未知信号、输入事件种类、被截断/私密输入文字及其他无法恢复的事件，不会假装它们被重放。`ReplayStateComparer` 根据相对场景拓扑/脚本/属性与 Resource 内容比较跨进程状态，避免 NodeId 和 ResourceId 在不同 Godot 进程中不同导致的误判；可观察属性差异写入 `replay_property_diverged`、`replay_resource_diverged` 和 `replay_groups_diverged` 等诊断。
+
+`ReplayJobManager` 是离线宿主作业管理器，提供 `godot_replay_start`、`godot_replay_status`、`godot_replay_report`。用户必须显式发起回放，宿主先校验项目范围和时间线完整性，再以 `GODOT_MCP_REPLAY_WORKER=1` 在原 Godot .NET 项目中启动**独立 Headless 进程**，限制并发和执行时长。`ReplayWorker` 从第一个 Checkpoint 恢复节点，按各批次记录的原 `Engine.GetProcessFrames()` 相对间隔注入经过白名单验证的 `InputEventKey` / `InputEventMouseButton` / `InputEventJoypadButton`，在后续观察点重新采集只读场景属性。无偏差输出 `matched`（精确定义为 `matched_observed_state`），偏差输出 `diverged` 并保存结构化 `replay_report.json`，无法评估输出 `inconclusive`。原活动游戏实例不会接收这些事件。
+
+**决定性约束**：Godot 并不能从这些 Checkpoint 完整恢复物理服务器内部状态、随机种子、时间、线程队列、远端网络、原始文字、通用自定义信号或所有 C# 私有状态。匹配说明*此测试轨迹的序列化场景状态*相同，不意味着任意 Godot 游戏可重复到每个 CPU/GPU/物理帧。业务脚本可能在挂载时改变 Scene，首个检查点会先比对；这类场景可能立刻报告 `replay_baseline_diverged`。隔离 Headless worker 会加载并运行可信游戏代码与 Autoload，不构成安全沙箱。

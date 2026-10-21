@@ -17,7 +17,7 @@ compatibility: >-
 
 # Godot Runtime MCP
 
-Operate a **running Godot 4 .NET game**, not the Godot editor's static scene files. The current source build exposes 51 runtime tools and 14 offline management/snapshot/timeline tools via an MCP server and a standalone CLI. This skill is deliberately **self-contained**: assume no other file, script, repository checkout, SDK, or MCP configuration accompanies it.
+Operate a **running Godot 4 .NET game**, not the Godot editor's static scene files. The current source build exposes 51 runtime tools and 17 offline management/snapshot/timeline/replay tools via an MCP server and a standalone CLI. This skill is deliberately **self-contained**: assume no other file, script, repository checkout, SDK, or MCP configuration accompanies it.
 
 ## Workflow
 
@@ -43,7 +43,7 @@ CLI=$(command -v godot-runtime-cli 2>/dev/null || true)
 
 If `version` fails, use [Standalone bootstrap](#standalone-bootstrap) only after diagnosing an absent or incompatible executable; do not silently overwrite an existing installation.
 
-The CLI accepts **direct kebab-case commands** for all tools (65 in this source build; older releases may differ). Options are generated from the embedded tool manifest; use `--help` to discover the actual parameters and required fields. You can also run `tools --json` for the complete schema.
+The CLI accepts **direct kebab-case commands** for all tools (68 in this source build; older releases may differ). Options are generated from the embedded tool manifest; use `--help` to discover the actual parameters and required fields. You can also run `tools --json` for the complete schema.
 
 ### Read-only inspection
 
@@ -94,6 +94,18 @@ Only start a recording when the user explicitly requests observation. These sess
 ```
 
 After the game exits, use event batches to locate interesting `toSnapshotId` frames and then run `godot-snapshot-export-tscn` on those snapshot IDs to inspect the native scene. Input and signal callbacks are opt-in. Only automatic zero-argument Godot signals and MCP-emitted parameter signals are integrated; arbitrary game-internal parameter signals may be missed. Never claim to recover typed passwords or arbitrary text: Unicode/IME and textual signal values are deliberately omitted or redacted. Report `droppedSamples`, `droppedObservedEvents`, and skipped screenshot counts when capture is enabled. Exported HTML embeds potentially private screenshots; it is never safe to share without explicit permission. A Headless renderer normally has no real frames; do not present `renderer_unavailable` as a captured image. Always mention dropped samples and avoid claiming that intermediate transient events were recorded.
+
+### Isolated input replay (bounded verification only)
+
+Only after explicit user authorization to run original trusted Godot project code, use the offline replay job tools. The original live game is not touched, but other Autoloads may run in the isolated process. The output status `matched` means *recorded serialized properties matched at sample boundaries*, **not** deterministic physics or full-game replay. Reject sessions with lost inputs or unsupported event types and report `inconclusive`.
+
+```sh
+"$CLI" godot-replay-start --project "/absolute/path/to/game" --session-id SESSION_ID
+"$CLI" godot-replay-status --project "/absolute/path/to/game" --job-id REPLAY_JOB_ID
+"$CLI" godot-replay-report --project "/absolute/path/to/game" --job-id REPLAY_JOB_ID
+```
+
+Preserve the returned job ID, poll while `running`, and inspect every issue in the structured report. When `diverged`, report the exact node path and property; when `inconclusive`, identify missing inputs, data loss or unsupported features. Never assert the engine or unobserved state was reproduced.
 
 ### Explicit runtime modifications
 

@@ -2,7 +2,7 @@
 
 **让 AI 直接检查和调试正在运行的 Godot 4 .NET 游戏。** 提供独立 `godot-runtime-cli`、标准 MCP Server 和可自行安装的 [Agent Skill](skills/godot-runtime/SKILL.md)。
 
-支持场景树、节点属性、方法调用、信号、日志、截图等 **51 项运行时操作**（含快照采集和时间线录制），另有 **14 项离线管理/查询工具**。CLI 和 MCP 共享官方 MCP C# SDK / 强类型接口，支持同一台机器上的多个 Godot 项目及进程。
+支持场景树、节点属性、方法调用、信号、日志、截图等 **51 项运行时操作**（含快照采集和时间线录制），另有 **17 项离线管理/查询工具**。CLI 和 MCP 共享官方 MCP C# SDK / 强类型接口，支持同一台机器上的多个 Godot 项目及进程。
 
 ## 交给 AI 安装（推荐）
 
@@ -82,6 +82,21 @@ godot-runtime-cli godot-timeline-export-gallery --project /absolute/path/to/game
 该导出会把**已经核验过的截图嵌入 HTML 文件**，并返回本机 `htmlPath`，用户可以通过文件管理器或浏览器打开。HTML 内可能包含屏幕上的隐私内容；它只会在显式导出时生成，谨慎分享。单次画廊最多展示 20 个采样点，可改变 `offset` 生成其他页面。在无截图的会话中仍会展示完整的文本变化时间线。
 
 归档位于原项目对应的私有录制目录内。事件是**两个实际观察点之间的状态差异**，不等于所有中间瞬时发生的事件；因此这不是输入/信号全量追踪、逐帧视频，也不是确定性时间回放。若游戏变化快于采样或文件写入速度，可能漏掉中间状态，报告会保留丢失采样数量。可从时间线中的 Snapshot ID 再用离线场景导出工具恢复具体采样点的 `.tscn`。
+
+## Runtime Black Box：独立输入回放与状态一致性验证（开发分支）
+
+新实现的**受限回放**在独立的 Godot 4 .NET/Mono 进程中从录制的第一个 Scene Checkpoint 重建测试场景，再按记录的相对 Process 帧间隔重新注入**键盘、鼠标按钮和手柄按钮**元数据；每到记录的观察点，重新采集可持久化节点属性并比对拓扑、组和 Resource 图。游戏退出后仍可请求回放，AI 获取到的是 `matched` / `diverged` / `inconclusive` / `failed` 的可检查诊断报告，而**不是原游戏进程的任意时间旅行**。
+
+```sh
+# 录制时必须主动保留输入回调，且不得有丢失的采样或事件
+godot-runtime-cli godot-timeline-start --project /absolute/path/to/game --sample-every-frames 10 --max-samples 30 --capture-input true
+# 游戏退出、录制完成后，在独立进程验证；需要对应项目的原始 C# 脚本和 Resource
+godot-runtime-cli godot-replay-start --project /absolute/path/to/game --session-id SESSION_ID
+godot-runtime-cli godot-replay-status --project /absolute/path/to/game --job-id REPLAY_JOB_ID
+godot-runtime-cli godot-replay-report --project /absolute/path/to/game --job-id REPLAY_JOB_ID
+```
+
+回放严格要求已完成／主动停止的会话、启用了输入记录、`sampleEveryFrames` 介于 1..120、无丢失采样／输入、2..60 个 Checkpoint、最多 1200 个原 Process 帧跨度；不满足则返回 `inconclusive` 而不是伪造成功。回放会真实执行项目脚本（并可能加载其他 Autoload），**不是代码沙箱**；与正在运行的用户游戏实例隔离。`matched` 只表示受支持的可观察节点属性、场景结构及部分 Resource 内容在检查点一致；**不能证明物理、随机数、网络、系统时间、线程调度、音频、GPU 或任意未记录信号的确定性**。输入法文字、手写笔、触摸及未录制的信号无法重演。对于更复杂项目，偏差检测应作为诊断，而不是保证严格决定性。
 
 ## 要求与安全
 

@@ -9,3 +9,12 @@ Tests/gates:
 4. Complete docs, all checkpoint/timeline/Gallery headless regressions, Native AOT packaging & tool counts, clean commits. No push/merge.
 
 Validation profile: only `sampleEveryFrames=1..120`, `captureInput=true`, no skipped/dropped samples/events, 2..60 checkpoints and 1200 recorded process-frame span. Signals and custom scripts are not injected; property state may depend on physics, random, timers, external files, window focus or environment; if any of these prevent observational match, report divergence. Unsupported input types => explicit `inconclusive`, never `matched`.
+
+## Implementation ledger
+
+- `7a6761b`: typed replay contracts, bounded plan and cross-process comparison; 120/120 assertions.
+- `f76fa8a`: isolated Godot worker, real Key K replay, matched vs changed-behavior divergence fixture, 120/120.
+- `3b206d4`: offline CLI/MCP job start/status/report and Resource/reference/group comparison; 130/130 assertions.
+- Follow-up: preserve recorded per-event Process frame timing (131/131); reject missing input capture at manager preflight (132/132).
+- Real macOS GUI Godot compatibility renderer emitted four valid PNGs (zero unavailable), and decoded images contained the visually drawn red `ColorRect` test patch. Headless tests still verify honest lack of renderer support.
+- Final steps: old checkpoint and timeline regressions, Native AOT release packaging, actual native CLI replay and secure documentation. No GitHub push/merge/release.

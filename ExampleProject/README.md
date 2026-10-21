@@ -25,3 +25,7 @@ From the repository root run `sh scripts/test-timeline-headless.sh` (set `GODOT_
 The timeline probe also validates opt-in input/signal callback recording, excludes typed Unicode and sensitive signal text from persisted events, checks bounded queue drop accounting, proves that default-off event recording saves nothing, and validates that stopping a session flushes its last pending input into a final checkpoint batch.
 
 Screenshot/video limitation: the Headless test is intentionally GPU-less. It tests honest `renderer_unavailable` markers for every sample and the static offline HTML gallery, while a separate .NET test exercises valid 1x1 PNG archival and gallery embedding. Run the graphical project with a camera to inspect captured Viewport frames visually; screenshots are opt-in and may include personal content.
+
+## Replay fixture / real GUI screenshot validation
+
+`sh scripts/test-replay-headless.sh` exercises a real Godot C# scene (`ReplayCounter`) recording a Key K input, then an isolated worker re-injects that input at its recorded relative frame offset and compares observed checkpoint properties. A test-only divergent input handler must produce a durable `replay_property_diverged` report. An offline CLI starts and polls the same worker independently after the original game quits. `sh scripts/test-timeline-graphical.sh` launches a short macOS Godot window, requires four genuine Viewport PNGs, and decodes pixels to confirm the red test patch is visible; the Headless path still correctly reports unavailable rendering.

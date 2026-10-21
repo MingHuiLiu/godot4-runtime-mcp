@@ -50,6 +50,6 @@ AOT 版示例：
 
 ## 离线管理工具
 
-`godot_status`、`godot_list_projects`、`godot_list_instances`、`godot_setup_guide`、`godot_install_backend` 在未运行游戏时可用。另有 9 项离线快照/时间线查询或导出工具，在游戏退出后仍可使用；51 项 Godot 运行时工具则需要匹配的游戏实例。
+`godot_status`、`godot_list_projects`、`godot_list_instances`、`godot_setup_guide`、`godot_install_backend` 在未运行游戏时可用。另有 12 项离线快照/时间线/受限回放工具，在游戏退出后仍可使用；51 项 Godot 运行时工具则需要匹配的游戏实例。
 
 参见 [架构](architecture.md) 与 [仓库 README](../README.md)。
