@@ -23,6 +23,7 @@ try
     TimelineDeltaTests.Run(Assert);
     TimelineToolTests.Run(Assert);
     await TimelineArchiveTests.RunAsync(Assert, scratch);
+    await TimelineStoreTests.RunAsync(Assert, scratch);
     await CheckpointArchiveTests.RunAsync(Assert, scratch);
     SnapshotToolTests.Run(Assert);
     await CheckpointStoreTests.RunAsync(Assert, scratch);
@@ -35,7 +36,8 @@ try
     var managementNames = new[] { "godot_status", "godot_list_instances", "godot_list_projects",
         "godot_setup_guide", "godot_install_backend", "godot_snapshot_list",
         "godot_snapshot_info", "godot_snapshot_nodes", "godot_snapshot_export_tscn",
-        "godot_snapshot_export_status" };
+        "godot_snapshot_export_status", "godot_timeline_sessions",
+        "godot_timeline_info", "godot_timeline_events" };
     int expectedTools = runtimeNames.Length + managementNames.Length;
     Assert(tools.Catalog().Count == expectedTools &&
         runtimeNames.All(tools.Exists) && managementNames.All(tools.Exists) &&

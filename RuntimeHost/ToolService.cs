@@ -79,6 +79,25 @@ public sealed class ToolService
             { ["project"] = new("string", "Absolute Godot project path"),
               ["jobId"] = new("string", "Export job ID") },
               ["project", "jobId"])));
+        runtimeTools.Add(new ToolDefinition("godot_timeline_sessions",
+            "List on-disk observed timeline sessions, even when the game has exited",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project path"),
+              ["limit"] = new("integer", "Maximum sessions 1..100") }, ["project"])));
+        runtimeTools.Add(new ToolDefinition("godot_timeline_info",
+            "Read a persisted timeline's sampling and completion metadata",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project path"),
+              ["sessionId"] = new("string", "Recording session identifier") },
+              ["project", "sessionId"])));
+        runtimeTools.Add(new ToolDefinition("godot_timeline_events",
+            "Page checked observed time span events from a completed or ongoing timeline",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project path"),
+              ["sessionId"] = new("string", "Recording session identifier"),
+              ["offset"] = new("integer", "Start sample index"),
+              ["limit"] = new("integer", "Number of samples (1..100)") },
+              ["project", "sessionId"])));
         _tools = runtimeTools;
     }
 
@@ -179,6 +198,32 @@ public sealed class ToolService
             string jobId = Str(args, "jobId") ?? throw new ArgumentException("jobId required");
             return JsonSerializer.SerializeToNode(jobs.Status(targetProject, jobId),
                 RuntimeJsonContext.Default.SceneExportJobStatus);
+        }
+        if (name is "godot_timeline_sessions" or "godot_timeline_info" or "godot_timeline_events")
+        {
+            string targetProject = Str(args, "project") ?? _project ??
+                throw new ArgumentException(name + " requires project");
+            var store = new TimelineStore();
+            int Number(string key, int fallback)
+            {
+                if (args[key] is not JsonValue value) return fallback;
+                if (value.TryGetValue<int>(out int i)) return i;
+                if (value.TryGetValue<long>(out long l) && l is >= int.MinValue and <= int.MaxValue)
+                    return (int)l;
+                throw new ArgumentException(key + " must be an integer");
+            }
+            if (name == "godot_timeline_sessions")
+                return JsonSerializer.SerializeToNode(
+                    store.List(targetProject, Number("limit", 50)).ToList(),
+                    Recording.SnapshotJsonContext.Default.ListTimelineSessionStatus);
+            var session = Str(args, "sessionId") ??
+                throw new ArgumentException(name + " requires sessionId");
+            if (name == "godot_timeline_info")
+                return JsonSerializer.SerializeToNode(store.Info(targetProject, session),
+                    Recording.SnapshotJsonContext.Default.TimelineSessionStatus);
+            return JsonSerializer.SerializeToNode(store.Events(targetProject, session,
+                Number("offset", 0), Number("limit", 50)),
+                Recording.SnapshotJsonContext.Default.TimelineEventPage);
         }
         if (!_runtimeNames.Contains(name))
             throw new ArgumentException("Unknown MCP tool: " + name);
