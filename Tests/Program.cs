@@ -23,6 +23,7 @@ try
     TimelineDeltaTests.Run(Assert);
     TimelineToolTests.Run(Assert);
     await TimelineArchiveTests.RunAsync(Assert, scratch);
+    await ObservedEventTests.RunAsync(Assert, scratch);
     await TimelineStoreTests.RunAsync(Assert, scratch);
     await CheckpointArchiveTests.RunAsync(Assert, scratch);
     SnapshotToolTests.Run(Assert);

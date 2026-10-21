@@ -8,16 +8,23 @@ public sealed record TimelineEvent(
     SnapshotValue? OldValue = null, SnapshotValue? NewValue = null,
     string? OldText = null, string? NewText = null);
 
+/// <summary>Actual callback delivered during a recording, not inferred from samples.</summary>
+public sealed record ObservedRuntimeEvent(
+    string Kind, string SourcePath, string Name, long ProcessFrame, long PhysicsFrame,
+    DateTimeOffset Utc, Dictionary<string, SnapshotValue> Fields);
+
 public sealed record TimelineBatch(
     int SchemaVersion, string SessionId, int SampleIndex,
     string FromSnapshotId, string ToSnapshotId, long ObservedProcessFrame,
-    List<TimelineEvent> Events, int DroppedSamples = 0);
+    List<TimelineEvent> Events, int DroppedSamples = 0,
+    List<ObservedRuntimeEvent>? ObservedEvents = null, int DroppedObservedEvents = 0);
 
 public sealed record TimelineSessionStatus(
     int SchemaVersion, string SessionId, string ProjectId, string InstanceId,
     string Status, int SampleEveryFrames, int MaxSamples, int SampleCount,
     int LastCommittedIndex, int DroppedSamples, string? LastSnapshotId,
-    string? Code = null, string? Message = null);
+    string? Code = null, string? Message = null,
+    bool CaptureSignals = false, bool CaptureInput = false, int DroppedObservedEvents = 0);
 
 public sealed record TimelineEventPage(
     string SessionId, int Total, int Offset, int Limit, List<TimelineBatch> Items);

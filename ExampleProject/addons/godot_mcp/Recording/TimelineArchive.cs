@@ -98,7 +98,8 @@ public static class TimelineArchive
                 SampleCount = before.SampleCount + 1,
                 LastCommittedIndex = batch.SampleIndex,
                 LastSnapshotId = batch.ToSnapshotId,
-                DroppedSamples = before.DroppedSamples + batch.DroppedSamples
+                DroppedSamples = before.DroppedSamples + batch.DroppedSamples,
+                DroppedObservedEvents = before.DroppedObservedEvents + batch.DroppedObservedEvents
             };
             await PublishStatusAsync(directory, next, ct);
             return next;
