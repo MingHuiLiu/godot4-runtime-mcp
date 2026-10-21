@@ -71,6 +71,18 @@ public static class ReplayContractTests
         assert(ReplayStateComparer.Compare(expR, wrongTarget).Any(i =>
             i.Code == "replay_reference_diverged"),
             "Replay never ignores changes to NodePath references");
+        bool misordered = false;
+        try
+        {
+            var third = next with { SampleIndex = 2, FromSnapshotId = "snap_b",
+                ToSnapshotId = "snap_c", ObservedProcessFrame = 20,
+                ObservedEvents = new() { key with { ProcessFrame = 11 } } };
+            ReplayPlanBuilder.Build(source with { SampleCount = 3,
+                LastCommittedIndex = 2 }, new[] { start, next, third });
+        }
+        catch (InvalidDataException e)
+        { misordered = e.Message.Contains("replay_incomplete"); }
+        assert(misordered, "Replay refuses timestamped input from an earlier checkpoint interval");
         bool dropped = false;
         try { ReplayPlanBuilder.Build(source with { DroppedObservedEvents = 1 },
               new[] { start, next }); }

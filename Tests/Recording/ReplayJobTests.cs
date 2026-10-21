@@ -22,7 +22,24 @@ public static class ReplayJobTests
             1, "rec_host", 1, "snap_start", "snap_end", 2, new()), CancellationToken.None);
         await TimelineArchive.CompleteAsync(timeline, "completed", CancellationToken.None);
 
+        string incompleteDir = Path.Combine(RuntimeRegistry.ConfigRoot, "recordings",
+            projectId, "rec_unverified", "timeline");
+        await TimelineArchive.CreateAsync(incompleteDir,
+            new TimelineSessionStatus(1, "rec_unverified", projectId, "instance_host",
+                "running", 5, 2, 0, -1, 0, null, CaptureInput: false),
+            CancellationToken.None);
+        await TimelineArchive.AppendAsync(incompleteDir, new TimelineBatch(
+            1, "rec_unverified", 0, "snap_pre", "snap_pre", 1, new()),
+            CancellationToken.None);
+        await TimelineArchive.AppendAsync(incompleteDir, new TimelineBatch(
+            1, "rec_unverified", 1, "snap_pre", "snap_post", 6, new()),
+            CancellationToken.None);
+        await TimelineArchive.CompleteAsync(incompleteDir, "completed", CancellationToken.None);
         var manager = new ReplayJobManager();
+        var notReplayable = manager.Start(project, "rec_unverified", null);
+        assert(notReplayable.Status == "inconclusive" &&
+               notReplayable.Code == "replay_incomplete",
+            "Replay manager rejects recordings without opted-in input before starting a worker");
         var missingEngine = manager.Start(project, "rec_host", "/does/not/exist/Godot");
         assert(missingEngine.Status == "failed" &&
                missingEngine.Code == "replay_engine_unavailable",

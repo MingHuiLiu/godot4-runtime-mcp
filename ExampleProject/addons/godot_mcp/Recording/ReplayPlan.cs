@@ -43,7 +43,7 @@ public static class ReplayPlanBuilder
                 batch.SampleIndex != i ||
                 (i == 0 && batch.FromSnapshotId != batch.ToSnapshotId) ||
                 (i > 0 && (batch.FromSnapshotId != batches[i - 1].ToSnapshotId ||
-                            batch.ObservedProcessFrame < batches[i - 1].ObservedProcessFrame)) ||
+                            batch.ObservedProcessFrame <= batches[i - 1].ObservedProcessFrame)) ||
                 batch.DroppedSamples != 0 || batch.DroppedObservedEvents != 0)
                 throw new InvalidDataException("replay_incomplete: batch continuity violated");
             var events = batch.ObservedEvents ?? new();
@@ -58,7 +58,7 @@ public static class ReplayPlanBuilder
                     throw new NotSupportedException(
                         "replay_unsupported_event: only key, mouse button and joy button are injectable");
                 if (e.ProcessFrame > batch.ObservedProcessFrame ||
-                    e.ProcessFrame <= batches[0].ObservedProcessFrame)
+                    e.ProcessFrame <= batches[Math.Max(i - 1, 0)].ObservedProcessFrame)
                     throw new InvalidDataException("replay_incomplete: unbounded input event frame");
                 if (!e.Fields.TryGetValue("pressed", out var pressed) || pressed.Type != "bool" ||
                     pressed.Data is null || !pressed.Data.GetValueKind().Equals(

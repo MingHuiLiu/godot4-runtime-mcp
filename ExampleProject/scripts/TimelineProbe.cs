@@ -27,6 +27,10 @@ public partial class TimelineProbe : Node
         Engine.MaxFps = 60;
         _world = new Node2D { Name = "TimelineWorld" };
         AddChild(_world);
+        // A visible color patch makes GUI screenshots verifiably nonblank.
+        _world.AddChild(new ColorRect { Name = "VisualPatch",
+            Position = new Vector2(12, 12), Size = new Vector2(180, 120),
+            Color = new Color(0.9f, 0.22f, 0.12f, 1f) });
         var started = _controller.Start(_world.GetPath().ToString(), 1, 4, true,
             captureSignals: true, captureInput: true, captureScreenshots: true);
         if (started.Status is not ("starting" or "running"))
@@ -116,15 +120,31 @@ public partial class TimelineProbe : Node
                 var events = TimelineArchive.ReadPage(timeline, 0, 10);
                 // Real headless Godot has a dummy renderer. A missing frame must
                 // be explicit; on a graphical renderer verify every captured PNG.
+                bool visibleColorDifference = false;
                 foreach (var sample in events.Items)
                 {
                     if (sample.Screenshot?.State == "captured")
-                        if (TimelineArchive.ReadImage(timeline, sample).Length < 33)
+                    {
+                        var png = TimelineArchive.ReadImage(timeline, sample);
+                        if (png.Length < 33)
                             throw new Exception("Invalid captured viewport PNG");
+                        using var inspected = new Image();
+                        if (inspected.LoadPngFromBuffer(png) != Error.Ok ||
+                            inspected.GetWidth() < 520 || inspected.GetHeight() < 520)
+                            throw new Exception("Viewport PNG was not decodable or was too small");
+                        var onPatch = inspected.GetPixel(25, 25);
+                        var background = inspected.GetPixel(500, 500);
+                        if (Mathf.Abs(onPatch.R - background.R) > 0.2f)
+                            visibleColorDifference = true;
+                    }
                     if (sample.Screenshot?.State != "captured" &&
                         sample.Screenshot?.State != "unavailable")
                         throw new Exception("Screenshot state absent instead of unavailable");
                 }
+                if (current.ScreenshotCount > 0 && !visibleColorDifference)
+                    throw new Exception("Graphical screenshot PNG did not contain drawn color patch");
+                if (visibleColorDifference)
+                    GD.Print("TIMELINE_REAL_PIXELS_PASS: decoded PNG contains rendered red patch");
                 if (!current.CaptureScreenshots ||
                     current.ScreenshotCount + current.SkippedScreenshots != events.Total)
                     throw new Exception("Screenshot metadata/counts do not match sample records");

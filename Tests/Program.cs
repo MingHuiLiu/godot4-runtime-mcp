@@ -239,6 +239,9 @@ try
         Assert(package.GetEntry("addons/godot_mcp/Recording/SnapshotSceneBuilder.cs") is not null &&
             package.GetEntry("addons/godot_mcp/Recording/export_worker.tscn") is not null &&
             package.GetEntry("addons/godot_mcp/Recording/RuntimeTimelineController.cs") is not null &&
+            package.GetEntry("addons/godot_mcp/Recording/ReplayWorker.cs") is not null &&
+            package.GetEntry("addons/godot_mcp/Recording/ReplayPlan.cs") is not null &&
+            package.GetEntry("addons/godot_mcp/Recording/replay_worker.tscn") is not null &&
             package.GetEntry("addons/godot_mcp/Recording/TimelineArchive.cs") is not null &&
             package.GetEntry("addons/godot_mcp/Recording/TimelineDeltaBuilder.cs") is not null,
             "Release ZIP retains nested runtime recording files");

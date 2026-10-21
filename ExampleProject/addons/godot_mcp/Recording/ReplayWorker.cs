@@ -17,7 +17,8 @@ public partial class ReplayWorker : Node
     private Node? _root;
     private string _reportPath = "";
     private int _index = 1;
-    private bool _compareNext;
+    private int _stepFrames;
+    private bool _awaitCompare;
     private int _compared;
     private int _matched;
     private int _injected;
@@ -101,22 +102,30 @@ public partial class ReplayWorker : Node
     public override void _Process(double delta)
     {
         if (_plan is null || _request is null || _root is null) return;
-        if (++_ticks > 1200)
+        if (++_ticks > 1500)
         {
             Finish("inconclusive", "replay_timeout", "Too many engine frames");
             return;
         }
         try
         {
-            if (!_compareNext)
+            if (!_awaitCompare)
             {
-                foreach (var observed in _plan.Steps[_index].Events)
+                // Preserve the recorded *relative process-frame spacing* of each
+                // input event. This improves repeatability but cannot control
+                // physics, timing of other Autoloads, RNG or external I/O.
+                _stepFrames++;
+                long from = _plan.Steps[_index - 1].ProcessFrame;
+                long replayedFrame = from + _stepFrames;
+                foreach (var observed in _plan.Steps[_index].Events.Where(e =>
+                    e.ProcessFrame == replayedFrame))
                 {
                     using var input = BuildInput(observed);
                     Input.ParseInputEvent(input);
                     _injected++;
                 }
-                _compareNext = true;
+                if (replayedFrame >= _plan.Steps[_index].ProcessFrame)
+                    _awaitCompare = true;
                 return;
             }
 
@@ -134,7 +143,8 @@ public partial class ReplayWorker : Node
             }
             _matched++;
             _index++;
-            _compareNext = false;
+            _stepFrames = 0;
+            _awaitCompare = false;
             if (_index == _plan.Steps.Count)
                 Finish("matched", "matched_observed_state",
                     "All supported exported scene properties matched at sample boundaries");
