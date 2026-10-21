@@ -71,3 +71,9 @@ Checkpoint 的 v1 编码器支持 Godot 标量、StringName/NodePath、二维/�
 每段录制在 `recordings/<project-id>/<session-id>/timeline/` 存储状态和带 SHA-256 的有序 JSON 事件批次，并沿用同一会话里的原生 SceneCheckpoint。状态文件最后原子发布；离线 `TimelineStore` 通过项目路径和会话 ID 限制访问，提供分页及完整性校验。退出游戏后可以浏览既有样本及事件，但若进程异常终止，则状态可能仍为 `running`，不能把它解释为活跃进程。
 
 **录制不是确定性 replay：** 不包括输入原始序列、任意信号每次发射、GPU 视频帧、线程/物理引擎私有瞬时状态；采样间隔内产生又消失的节点不会被发现。后续功能若引入这些数据必须使用独立且可核验的录制通道，不得混淆观测差异和事件日志。
+
+### 可观察信号和输入事件通道
+
+仅当用户对某段录制显式开启 `captureSignals` 或 `captureInput` 时，`RuntimeTimelineController` 才接收原生回调并将其保存为 `TimelineBatch.ObservedEvents`。后台归档的同一批次包含 SHA-256 哈希，离线 `godot_timeline_events` 返回采样差异 `events` 和回调事件 `observedEvents` 两个独立集合。每批最多 256 条回调，超过限制累计 `droppedObservedEvents`；停止录制前会额外进行一次有限的终态采样以落盘尾部事件，如果已达到最大样本数，则明确统计无法写入的事件。信号录制仅限目标场景子树，输入不会阻止或改变引擎原有分发。
+
+回调范围：项目已有的全局监听器能自动观察**零参数**的 Godot Signal；通过 `emit_signal` MCP 操作成功触发的带参数信号也会被记录。并非通用 C# 参数信号钩子，也不覆盖每次脚本内部调用。输入来自插件 `_Input`，支持按键、鼠标按键/位移及手柄按钮的有限元数据；`Unicode`、IME 和文本均不持久化。Signal 参数中数值/布尔数值可以记录，字符串和 Resource 等敏感或复杂值均以 `redacted` 代替。录制默认关闭回调收集，需要用户显式设置 `captureSignals`/`captureInput`。这些数据属于可观察事件证据，不保证因果顺序或 deterministic replay。

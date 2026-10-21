@@ -80,6 +80,8 @@ Only start a recording when the user explicitly requests observation. These sess
 
 ```sh
 "$CLI" godot-timeline-start --project "/absolute/path/to/game" --sample-every-frames 30 --max-samples 60
+# Capture callback evidence only with explicit user authorization:
+"$CLI" godot-timeline-start --project "/absolute/path/to/game" --sample-every-frames 30 --max-samples 60 --capture-signals true --capture-input true
 "$CLI" godot-timeline-status --project "/absolute/path/to/game" --session-id SESSION_ID
 "$CLI" godot-timeline-stop --project "/absolute/path/to/game" --session-id SESSION_ID
 "$CLI" godot-timeline-sessions --project "/absolute/path/to/game"
@@ -87,7 +89,7 @@ Only start a recording when the user explicitly requests observation. These sess
 "$CLI" godot-timeline-events --project "/absolute/path/to/game" --session-id SESSION_ID --offset 0 --limit 20
 ```
 
-After the game exits, use event batches to locate interesting `toSnapshotId` frames and then run `godot-snapshot-export-tscn` on those snapshot IDs to inspect the native scene. Always mention dropped samples and avoid claiming that intermediate transient events were recorded.
+After the game exits, use event batches to locate interesting `toSnapshotId` frames and then run `godot-snapshot-export-tscn` on those snapshot IDs to inspect the native scene. Input and signal callbacks are opt-in. Only automatic zero-argument Godot signals and MCP-emitted parameter signals are integrated; arbitrary game-internal parameter signals may be missed. Never claim to recover typed passwords or arbitrary text: Unicode/IME and textual signal values are deliberately omitted or redacted. Report both `droppedSamples` and `droppedObservedEvents`. Always mention dropped samples and avoid claiming that intermediate transient events were recorded.
 
 ### Explicit runtime modifications
 

@@ -74,3 +74,7 @@ godot --headless --path ExampleProject
 ## Runtime timeline integration
 
 Run `sh scripts/test-timeline-headless.sh` with a local Godot 4 Mono executable (`GODOT_BIN` overrides the default macOS path). The test starts a bounded recording, alters scene nodes between observations, verifies persisted add/rename/remove events, starts a second recording and stops it, exits Godot, then runs separate offline CLI calls to list, inspect, and page sessions. Pure host tests cover schema limits, resource/diagnostic diffs, archive tamper detection and project isolation. The recording deliberately has a hard sampling quota and does not attempt deterministic replay or capture events between sampling frames.
+
+### Observed callback channel probe
+
+`sh scripts/test-timeline-headless.sh` now also exercises real Godot `Input.ParseInputEvent` and `Renamed` signal callbacks, a script-defined parameter signal with private text redaction, a flood of 300 input callbacks with a bounded 256-event queue and recorded drop count, default-off second recording, and stop-flush of a pending key event into the final durable sample. The offline CLI validates observations after the Godot process quits. No test assumes zero-arg signal monitoring sees every signal; arbitrary game-side parameter signal hooks are not currently supported.

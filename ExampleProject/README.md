@@ -21,3 +21,5 @@ From the repository root, run `sh scripts/test-snapshot-headless.sh` (set `GODOT
 ## Runtime timeline integration probe
 
 From the repository root run `sh scripts/test-timeline-headless.sh` (set `GODOT_BIN` for a nondefault Godot Mono path). The test first captures an observable add/rename/remove timeline, then stops another recording, and finally verifies offline query tools in a different CLI process after Godot quits. All samples are isolated in a temporary folder and deleted after verification.
+
+The timeline probe also validates opt-in input/signal callback recording, excludes typed Unicode and sensitive signal text from persisted events, checks bounded queue drop accounting, proves that default-off event recording saves nothing, and validates that stopping a session flushes its last pending input into a final checkpoint batch.

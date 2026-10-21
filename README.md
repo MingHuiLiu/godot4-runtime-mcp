@@ -70,6 +70,8 @@ godot-runtime-cli godot-timeline-info --project /absolute/path/to/game --session
 godot-runtime-cli godot-timeline-events --project /absolute/path/to/game --session-id SESSION_ID --offset 0 --limit 20
 ```
 
+**选择性事件采集：** 原有的 `godot-timeline-start` 默认仅保存采样状态；另外指定 `--capture-signals true --capture-input true` 才会为该会话启用回调事件记录。输入事件仅保留按键码、按下状态与有限鼠标元数据，不保存 `Unicode`、IME 或输入文本；信号参数中的文本及资源对象会被标记为 `redacted`。现阶段自动连接的是 Godot 零参数信号，另外记录通过 MCP 工具成功发射的带参数信号；不支持宣称所有 C# 自定义带参数信号均被自动监听。每个样本至多保存 256 条回调事件，剩余部分会累计显示在 `droppedObservedEvents`。
+
 归档位于原项目对应的私有录制目录内。事件是**两个实际观察点之间的状态差异**，不等于所有中间瞬时发生的事件；因此这不是输入/信号全量追踪、逐帧视频，也不是确定性时间回放。若游戏变化快于采样或文件写入速度，可能漏掉中间状态，报告会保留丢失采样数量。可从时间线中的 Snapshot ID 再用离线场景导出工具恢复具体采样点的 `.tscn`。
 
 ## 要求与安全
