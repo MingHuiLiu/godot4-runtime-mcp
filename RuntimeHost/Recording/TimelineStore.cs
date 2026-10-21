@@ -45,6 +45,12 @@ public sealed class TimelineStore
         return timeline;
     }
 
+    internal string TimelineDirectory(string project, string sessionId) =>
+        Resolve(project, sessionId);
+
+    public byte[] ReadScreenshot(string project, string sessionId, TimelineBatch batch) =>
+        TimelineArchive.ReadImage(Resolve(project, sessionId), batch);
+
     public IReadOnlyList<TimelineSessionStatus> List(string project, int limit = 50)
     {
         if (limit is < 1 or > 100)

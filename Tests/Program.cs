@@ -24,6 +24,7 @@ try
     TimelineToolTests.Run(Assert);
     await TimelineArchiveTests.RunAsync(Assert, scratch);
     await TimelineFrameTests.RunAsync(Assert, scratch);
+    await TimelineGalleryTests.RunAsync(Assert, scratch);
     await ObservedEventTests.RunAsync(Assert, scratch);
     await TimelineStoreTests.RunAsync(Assert, scratch);
     await CheckpointArchiveTests.RunAsync(Assert, scratch);
@@ -39,7 +40,8 @@ try
         "godot_setup_guide", "godot_install_backend", "godot_snapshot_list",
         "godot_snapshot_info", "godot_snapshot_nodes", "godot_snapshot_export_tscn",
         "godot_snapshot_export_status", "godot_timeline_sessions",
-        "godot_timeline_info", "godot_timeline_events" };
+        "godot_timeline_info", "godot_timeline_events",
+        "godot_timeline_export_gallery" };
     int expectedTools = runtimeNames.Length + managementNames.Length;
     Assert(tools.Catalog().Count == expectedTools &&
         runtimeNames.All(tools.Exists) && managementNames.All(tools.Exists) &&

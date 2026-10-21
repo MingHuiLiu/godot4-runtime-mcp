@@ -98,6 +98,14 @@ public sealed class ToolService
               ["offset"] = new("integer", "Start sample index"),
               ["limit"] = new("integer", "Number of samples (1..100)") },
               ["project", "sessionId"])));
+        runtimeTools.Add(new ToolDefinition("godot_timeline_export_gallery",
+            "Export a self-contained private HTML visual timeline with verified PNG frames",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project path"),
+              ["sessionId"] = new("string", "Persisted recording session ID"),
+              ["offset"] = new("integer", "Starting sample index"),
+              ["limit"] = new("integer", "Samples per static gallery page, 1..20") },
+              ["project", "sessionId"])));
         _tools = runtimeTools;
     }
 
@@ -224,6 +232,25 @@ public sealed class ToolService
             return JsonSerializer.SerializeToNode(store.Events(targetProject, session,
                 Number("offset", 0), Number("limit", 50)),
                 Recording.SnapshotJsonContext.Default.TimelineEventPage);
+        }
+        if (name == "godot_timeline_export_gallery")
+        {
+            string targetProject = Str(args, "project") ?? _project ??
+                throw new ArgumentException("godot_timeline_export_gallery requires project");
+            string targetSession = Str(args, "sessionId") ??
+                throw new ArgumentException("godot_timeline_export_gallery requires sessionId");
+            int Number(string key, int fallback)
+            {
+                if (args[key] is not JsonValue value) return fallback;
+                if (value.TryGetValue<int>(out int n)) return n;
+                if (value.TryGetValue<long>(out long l) && l >= int.MinValue && l <= int.MaxValue)
+                    return (int)l;
+                throw new ArgumentException(key + " must be an integer");
+            }
+            var galleryResult = new TimelineGalleryExporter().Export(targetProject,
+                targetSession, Number("offset", 0), Number("limit", 20));
+            return JsonSerializer.SerializeToNode(galleryResult,
+                RuntimeJsonContext.Default.TimelineGalleryResult);
         }
         if (!_runtimeNames.Contains(name))
             throw new ArgumentException("Unknown MCP tool: " + name);

@@ -69,3 +69,20 @@ info=json.load(open(sys.argv[1]))
 assert info['status']=='completed' and info['sampleCount']==4,info
 PY
 echo 'TIMELINE_OFFLINE_PASS: separate CLI lists, pages and inspects completed/stopped sessions'
+# An offline host can render a standalone, script-free gallery after Godot exits.
+run_host godot-timeline-export-gallery \
+    --project "$ROOT/ExampleProject" --session-id "$COMPLETED" \
+    --offset 0 --limit 10 > "$LOG"
+python3 - "$LOG" <<'PY'
+import json,sys,pathlib
+output=json.load(open(sys.argv[1]))
+assert output['total']==4 and output['includedSamples']==4,output
+assert output['imageCount']+output['unavailableCount']==4,output
+html=pathlib.Path(output['htmlPath']).read_text()
+assert 'Content-Security-Policy' in html and '<script' not in html,html[:900]
+assert 'node_added' in html and 'node_removed' in html,html[:1300]
+assert 'Runtime Black Box' in html and 'godot' not in output['sessionId'],output
+if output['unavailableCount']:
+    assert 'renderer_unavailable' in html or 'viewport_unavailable' in html,html[-500:]
+PY
+echo 'TIMELINE_GALLERY_PASS: offline CLI renders escaped private static HTML aligned with 4 frames'
