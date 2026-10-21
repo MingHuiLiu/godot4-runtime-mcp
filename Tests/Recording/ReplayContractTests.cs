@@ -39,6 +39,38 @@ public static class ReplayContractTests
         assert(mismatch.Any(i => i.Code == "replay_property_diverged" &&
                                   i.Property == "hits"),
             "Diverged properties produce actionable typed diagnostics");
+        var expectedResource = new RecordedResource("r_alpha", "RectangleShape2D", null,
+            null, false, new() { ["size"] = new SnapshotValue("int64", JsonValue.Create(8)) }, new());
+        var sameResource = expectedResource with { ResourceId = "r_beta" };
+        var differentResource = sameResource with { Properties = new() {
+            ["size"] = new SnapshotValue("int64", JsonValue.Create(16)) } };
+        SceneCheckpoint WithShape(SceneCheckpoint source, RecordedResource resource,
+            string parentRef = "n0") => source with {
+                Resources = new() { resource },
+                Nodes = source.Nodes.Select(node => node.NodeId != source.RootNodeId ?
+                    node with {
+                        Groups = new() { "interactive" },
+                        Properties = new(node.Properties) {
+                            ["shape"] = new SnapshotValue("resource_ref", null, resource.ResourceId),
+                            ["target"] = new SnapshotValue("node_ref", null, parentRef) }
+                    } : node).ToList() };
+        var expR = WithShape(second, expectedResource);
+        var gotR = WithShape(Cp("observed", 1, "new-id"), sameResource);
+        assert(ReplayStateComparer.Compare(expR, gotR).Count == 0,
+            "Resource/node references are compared across different instance IDs by content/topology");
+        var changedR = WithShape(Cp("observed", 1, "new-id"), differentResource);
+        assert(ReplayStateComparer.Compare(expR, changedR).Any(i =>
+            i.Code == "replay_resource_diverged"),
+            "Replay detects divergent Resource fields even when reference fields look identical");
+        var otherGroup = gotR with { Nodes = gotR.Nodes.Select(n =>
+            n.NodeId != gotR.RootNodeId ? n with { Groups = new() { "modified" } } : n).ToList() };
+        assert(ReplayStateComparer.Compare(expR, otherGroup).Any(i =>
+            i.Code == "replay_groups_diverged"),
+            "Replay checks persistent node group changes");
+        var wrongTarget = WithShape(Cp("observed", 1, "new-id"), sameResource, "new-id");
+        assert(ReplayStateComparer.Compare(expR, wrongTarget).Any(i =>
+            i.Code == "replay_reference_diverged"),
+            "Replay never ignores changes to NodePath references");
         bool dropped = false;
         try { ReplayPlanBuilder.Build(source with { DroppedObservedEvents = 1 },
               new[] { start, next }); }

@@ -37,3 +37,7 @@ public sealed record SnapshotNodePage(int Total, int Offset, int Limit,
 public sealed record SceneExportJobStatus(string JobId, string Status,
     string? ScenePath, string? ReportPath, string? Code, string? Message,
     int? Pid = null);
+
+/// <summary>Persistent isolated input-replay job state (matched is observational).</summary>
+public sealed record ReplayJobStatus(string JobId, string Status, string SessionId,
+    string? ReportPath, string? Code, string? Message, int? Pid = null);

@@ -85,9 +85,9 @@ public static class ReplayPlanBuilder
 public static class ReplayStateComparer
 {
     /// <summary>
-    /// Cross-process comparison by relative topology: process-local NodeId is NEVER
-    /// used for equality. Properties include exported storage fields, not private
-    /// C# fields, engine transient state or global frame number.
+    /// Independent process identities are reconciled by relative topology and
+    /// Resource graph content. Unsupported nested Variant references cause a
+    /// conservative comparison failure rather than a false match.
     /// </summary>
     public static List<ReplayIssue> Compare(SceneCheckpoint expected,
         SceneCheckpoint observed, int maxIssues = 100)
@@ -95,10 +95,12 @@ public static class ReplayStateComparer
         SnapshotSchema.Validate(expected);
         SnapshotSchema.Validate(observed);
         var issues = new List<ReplayIssue>();
-        static Dictionary<string, RecordedNode> ByPath(SceneCheckpoint s)
+        static (Dictionary<string, RecordedNode> Paths, Dictionary<string, string> Ids)
+            ByPath(SceneCheckpoint s)
         {
-            var ids = s.Nodes.ToDictionary(n => n.NodeId);
+            var nodeIds = s.Nodes.ToDictionary(n => n.NodeId);
             var result = new Dictionary<string, RecordedNode>(StringComparer.Ordinal);
+            var idPaths = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var n in s.Nodes)
             {
                 var parts = new List<string>();
@@ -107,23 +109,80 @@ public static class ReplayStateComparer
                 {
                     parts.Add(current.Name + "#" + current.SiblingIndex);
                     if (current.ParentId is null) break;
-                    if (!ids.TryGetValue(current.ParentId, out current!))
+                    if (!nodeIds.TryGetValue(current.ParentId, out current!))
                         throw new InvalidDataException("replay_incomplete: orphan node");
                 }
                 parts.Reverse();
-                string path = string.Join("/", parts.Skip(1)); // Root may be renamed in isolated worker
+                string path = string.Join("/", parts.Skip(1));
                 if (!result.TryAdd(path, n))
                     throw new InvalidDataException("replay_incomplete: ambiguous node path");
+                idPaths[n.NodeId] = path;
             }
-            return result;
+            return (result, idPaths);
         }
-        var a = ByPath(expected);
-        var b = ByPath(observed);
+        var (a, aIds) = ByPath(expected);
+        var (b, bIds) = ByPath(observed);
+        var aResources = expected.Resources.ToDictionary(r => r.ResourceId);
+        var bResources = observed.Resources.ToDictionary(r => r.ResourceId);
         void Add(string code, string? path, string? prop, string message)
         {
             if (issues.Count < maxIssues)
                 issues.Add(new ReplayIssue(code, path, prop, message));
         }
+
+        bool Same(SnapshotValue exp, SnapshotValue actual,
+            string path, string property, HashSet<string>? visited = null)
+        {
+            if (exp.Type != actual.Type)
+                return false;
+            switch (exp.Type)
+            {
+                case "node_ref":
+                    if (exp.RefId is null || actual.RefId is null ||
+                        !aIds.TryGetValue(exp.RefId, out var wantedPath) ||
+                        !bIds.TryGetValue(actual.RefId, out var gotPath) ||
+                        wantedPath != gotPath)
+                    {
+                        Add("replay_reference_diverged", path, property,
+                            "Target node differs across processes");
+                        return false;
+                    }
+                    return true;
+                case "resource_ref":
+                    if (exp.RefId is null || actual.RefId is null ||
+                        !aResources.TryGetValue(exp.RefId, out var wanted) ||
+                        !bResources.TryGetValue(actual.RefId, out var got))
+                    {
+                        Add("replay_reference_diverged", path, property,
+                            "Referenced Resource unavailable after reconstruction");
+                        return false;
+                    }
+                    visited ??= new HashSet<string>(StringComparer.Ordinal);
+                    string visitKey = exp.RefId + ":" + actual.RefId;
+                    if (!visited.Add(visitKey)) return true;
+                    bool ok = wanted.ClassName == got.ClassName &&
+                        wanted.ResourcePath == got.ResourcePath &&
+                        wanted.Sha256 == got.Sha256 &&
+                        wanted.LocalToScene == got.LocalToScene &&
+                        wanted.Properties.Count == got.Properties.Count;
+                    foreach (var (key, expectedValue) in wanted.Properties)
+                    {
+                        if (!got.Properties.TryGetValue(key, out var actualValue) ||
+                            !Same(expectedValue, actualValue, path, property + "." + key, visited))
+                            ok = false;
+                    }
+                    if (!ok)
+                        Add("replay_resource_diverged", path, property,
+                            "Referenced Resource content or metadata differs");
+                    return ok;
+                default:
+                    // DeepEquals on nested resources is conservative: any process-
+                    // local ID mismatch is a divergence, never a false match.
+                    return exp.RefId == actual.RefId &&
+                        JsonNode.DeepEquals(exp.Data, actual.Data);
+            }
+        }
+
         foreach (var (path, exp) in a)
         {
             if (!b.TryGetValue(path, out var got))
@@ -134,16 +193,21 @@ public static class ReplayStateComparer
             if (exp.NativeClass != got.NativeClass || exp.ScriptPath != got.ScriptPath ||
                 exp.Name != got.Name)
                 Add("replay_node_diverged", path, null, "Type/name/script differs");
+            if (!exp.Groups.OrderBy(g => g, StringComparer.Ordinal).SequenceEqual(
+                got.Groups.OrderBy(g => g, StringComparer.Ordinal)))
+                Add("replay_groups_diverged", path, null, "Node group membership changed");
             foreach (var (name, value) in exp.Properties)
             {
-                if (!got.Properties.TryGetValue(name, out var observedValue) ||
-                    !Same(value, observedValue))
+                if (!got.Properties.TryGetValue(name, out var observedValue))
+                    Add("replay_property_diverged", path, name, "Expected property missing");
+                else if (!Same(value, observedValue, path, name) &&
+                         !issues.Any(i => i.NodePath == path && i.Property == name))
                     Add("replay_property_diverged", path, name,
-                        "Serialized state differs at the observed sample boundary");
+                        "Serialized property differs at the observed sample boundary");
             }
             foreach (string extra in got.Properties.Keys.Except(exp.Properties.Keys))
                 Add("replay_property_diverged", path, extra,
-                    "Unexpected new serialized property");
+                    "Unexpected serialized property");
         }
         foreach (string path in b.Keys.Except(a.Keys))
             Add("replay_node_unexpected", path, null, "Unexpected node appeared");
@@ -151,10 +215,4 @@ public static class ReplayStateComparer
             Add("replay_resources_diverged", null, null, "Resource graph count differs");
         return issues;
     }
-
-    private static bool Same(SnapshotValue expected, SnapshotValue actual) =>
-        expected.Type == actual.Type &&
-        (expected.Type is not ("node_ref" or "resource_ref")
-            ? expected.RefId == actual.RefId
-            : true) && JsonNode.DeepEquals(expected.Data, actual.Data);
 }

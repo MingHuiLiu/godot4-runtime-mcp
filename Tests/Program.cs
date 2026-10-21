@@ -22,6 +22,7 @@ try
     SnapshotContractTests.Run(Assert);
     TimelineDeltaTests.Run(Assert);
     ReplayContractTests.Run(Assert);
+    await ReplayJobTests.RunAsync(Assert, scratch);
     TimelineToolTests.Run(Assert);
     await TimelineArchiveTests.RunAsync(Assert, scratch);
     await TimelineFrameTests.RunAsync(Assert, scratch);
@@ -42,7 +43,8 @@ try
         "godot_snapshot_info", "godot_snapshot_nodes", "godot_snapshot_export_tscn",
         "godot_snapshot_export_status", "godot_timeline_sessions",
         "godot_timeline_info", "godot_timeline_events",
-        "godot_timeline_export_gallery" };
+        "godot_timeline_export_gallery", "godot_replay_start",
+        "godot_replay_status", "godot_replay_report" };
     int expectedTools = runtimeNames.Length + managementNames.Length;
     Assert(tools.Catalog().Count == expectedTools &&
         runtimeNames.All(tools.Exists) && managementNames.All(tools.Exists) &&

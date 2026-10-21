@@ -106,6 +106,25 @@ public sealed class ToolService
               ["offset"] = new("integer", "Starting sample index"),
               ["limit"] = new("integer", "Samples per static gallery page, 1..20") },
               ["project", "sessionId"])));
+        runtimeTools.Add(new ToolDefinition("godot_replay_start",
+            "Start isolated bounded input replay for an offline timeline (does not alter live game)",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot 4 .NET project directory"),
+              ["sessionId"] = new("string", "Verified completed timeline session ID"),
+              ["godotBinary"] = new("string", "Optional absolute Godot Mono executable") },
+              ["project", "sessionId"])));
+        runtimeTools.Add(new ToolDefinition("godot_replay_status",
+            "Check isolated replay job and comparison result",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project directory"),
+              ["jobId"] = new("string", "Replay job ID") },
+              ["project", "jobId"])));
+        runtimeTools.Add(new ToolDefinition("godot_replay_report",
+            "Read structured divergence issues after an isolated replay completes",
+            new ToolInputSchema("object", new Dictionary<string, ToolParameterDefinition>
+            { ["project"] = new("string", "Absolute Godot project directory"),
+              ["jobId"] = new("string", "Replay job ID") },
+              ["project", "jobId"])));
         _tools = runtimeTools;
     }
 
@@ -251,6 +270,28 @@ public sealed class ToolService
                 targetSession, Number("offset", 0), Number("limit", 20));
             return JsonSerializer.SerializeToNode(galleryResult,
                 RuntimeJsonContext.Default.TimelineGalleryResult);
+        }
+        if (name is "godot_replay_start" or "godot_replay_status" or "godot_replay_report")
+        {
+            string targetProject = Str(args, "project") ?? _project ??
+                throw new ArgumentException(name + " requires project");
+            var jobs = new ReplayJobManager();
+            string? binary = Str(args, "godotBinary");
+            if (name == "godot_replay_start")
+            {
+                string sessionId = Str(args, "sessionId") ??
+                    throw new ArgumentException("godot_replay_start requires sessionId");
+                var started = jobs.Start(targetProject, sessionId, binary);
+                return JsonSerializer.SerializeToNode(started,
+                    RuntimeJsonContext.Default.ReplayJobStatus);
+            }
+            string jobId = Str(args, "jobId") ??
+                throw new ArgumentException(name + " requires jobId");
+            if (name == "godot_replay_status")
+                return JsonSerializer.SerializeToNode(jobs.Status(targetProject, jobId),
+                    RuntimeJsonContext.Default.ReplayJobStatus);
+            return JsonSerializer.SerializeToNode(jobs.Report(targetProject, jobId),
+                Recording.SnapshotJsonContext.Default.ReplayReport);
         }
         if (!_runtimeNames.Contains(name))
             throw new ArgumentException("Unknown MCP tool: " + name);
