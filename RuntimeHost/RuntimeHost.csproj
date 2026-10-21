@@ -16,6 +16,7 @@
     <Compile Include="../addons/godot_mcp/Recording/SnapshotContracts.cs" Link="Recording/SnapshotContracts.cs" />
     <Compile Include="../addons/godot_mcp/Recording/SnapshotJsonContext.cs" Link="Recording/SnapshotJsonContext.cs" />
     <Compile Include="../addons/godot_mcp/Recording/CheckpointArchive.cs" Link="Recording/CheckpointArchive.cs" />
+    <Compile Include="../addons/godot_mcp/Recording/TimelineDeltaBuilder.cs" Link="Recording/TimelineDeltaBuilder.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../addons/godot_mcp/**/*.*">

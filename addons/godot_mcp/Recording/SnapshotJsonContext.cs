@@ -18,5 +18,11 @@ namespace GodotRuntimeMcp.Recording;
 [JsonSerializable(typeof(SnapshotExportRequest))]
 [JsonSerializable(typeof(SceneExportDependencies))]
 [JsonSerializable(typeof(SceneExportResult))]
+[JsonSerializable(typeof(TimelineBatch))]
+[JsonSerializable(typeof(TimelineEvent))]
+[JsonSerializable(typeof(TimelineSessionStatus))]
+[JsonSerializable(typeof(TimelineEventPage))]
+[JsonSerializable(typeof(List<TimelineSessionStatus>))]
+[JsonSerializable(typeof(List<TimelineBatch>))]
 [JsonSerializable(typeof(Dictionary<string, SnapshotValue>))]
 public partial class SnapshotJsonContext : JsonSerializerContext { }

@@ -20,6 +20,7 @@ void Assert(bool yes, string message)
 try
 {
     SnapshotContractTests.Run(Assert);
+    TimelineDeltaTests.Run(Assert);
     await CheckpointArchiveTests.RunAsync(Assert, scratch);
     SnapshotToolTests.Run(Assert);
     await CheckpointStoreTests.RunAsync(Assert, scratch);
