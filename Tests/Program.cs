@@ -21,6 +21,7 @@ try
 {
     SnapshotContractTests.Run(Assert);
     TimelineDeltaTests.Run(Assert);
+    await TimelineArchiveTests.RunAsync(Assert, scratch);
     await CheckpointArchiveTests.RunAsync(Assert, scratch);
     SnapshotToolTests.Run(Assert);
     await CheckpointStoreTests.RunAsync(Assert, scratch);
