@@ -11,3 +11,8 @@ godot --headless --path ExampleProject
 ```
 
 若同时运行两个演示游戏进程，最后一条调用必须补充 `--instance ID`，否则宿主应拒绝模糊目标。详细说明请见 [架构](../docs/architecture.md)。
+
+
+## Runtime scene checkpoint integration probe
+
+From the repository root, run `sh scripts/test-snapshot-headless.sh` (set `GODOT_BIN` if Godot Mono is not installed at the macOS default path). The probe builds the C# example, captures a dynamic Owner-null node tree, verifies an isolated reconstruction, persists a checkpoint, exits the game, and verifies both direct and CLI-triggered Headless `.tscn` export. The test uses temporary directories and cleans up its files.

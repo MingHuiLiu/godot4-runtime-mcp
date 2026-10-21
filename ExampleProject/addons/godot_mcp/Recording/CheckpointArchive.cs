@@ -21,10 +21,24 @@ public static class CheckpointArchive
     {
         SnapshotSchema.Validate(checkpoint);
         Directory.CreateDirectory(snapshotDirectory);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(snapshotDirectory,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        string reservationPath = Path.Combine(snapshotDirectory, ".commit.lock");
+        using var reservation = new FileStream(reservationPath, FileMode.CreateNew,
+            FileAccess.Write, FileShare.None);
         string staging = Path.Combine(snapshotDirectory, ".stage-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(staging);
         try
         {
+            // Reject completed or incomplete preexisting snapshots before touching any payload.
+            // The exclusive reservation prevents two writers racing on the same snapshot ID.
+            if (Directory.EnumerateFileSystemEntries(snapshotDirectory)
+                .Any(path => path != reservationPath))
+                throw new IOException("snapshot_already_exists: refusing to overwrite checkpoint");
+            Directory.CreateDirectory(staging);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(staging,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             await WriteJsonLinesAsync(Path.Combine(staging, "nodes.jsonl.gz"),
                 checkpoint.Nodes.Select(n => JsonSerializer.Serialize(n, SnapshotJsonContext.Default.RecordedNode)), ct);
             await WriteJsonLinesAsync(Path.Combine(staging, "resources.jsonl.gz"),
@@ -47,15 +61,25 @@ public static class CheckpointArchive
             await File.WriteAllTextAsync(Path.Combine(staging, "manifest.json"),
                 JsonSerializer.Serialize(manifest, SnapshotJsonContext.Default.CheckpointManifest), ct);
             foreach (string name in PayloadFiles)
-                File.Move(Path.Combine(staging, name), Path.Combine(snapshotDirectory, name), true);
+            {
+                var destination = Path.Combine(snapshotDirectory, name);
+                File.Move(Path.Combine(staging, name), destination, false);
+                if (!OperatingSystem.IsWindows())
+                    File.SetUnixFileMode(destination, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
             // Publishing the manifest is the commit marker; incomplete writes are never readable.
-            File.Move(Path.Combine(staging, "manifest.json"), Path.Combine(snapshotDirectory, "manifest.json"), false);
+            string published = Path.Combine(snapshotDirectory, "manifest.json");
+            File.Move(Path.Combine(staging, "manifest.json"), published, false);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(published, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             return manifest;
         }
         finally
         {
             if (Directory.Exists(staging))
                 Directory.Delete(staging, true);
+            reservation.Dispose();
+            if (File.Exists(reservationPath)) File.Delete(reservationPath);
         }
     }
 

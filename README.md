@@ -2,7 +2,7 @@
 
 **让 AI 直接检查和调试正在运行的 Godot 4 .NET 游戏。** 提供独立 `godot-runtime-cli`、标准 MCP Server 和可自行安装的 [Agent Skill](skills/godot-runtime/SKILL.md)。
 
-支持场景树、节点属性、方法调用、信号、日志、截图等 **46 项运行时操作**，另有 **5 项离线管理工具**。CLI 和 MCP 共享官方 MCP C# SDK / 强类型接口，支持同一台机器上的多个 Godot 项目及进程。
+支持场景树、节点属性、方法调用、信号、日志、截图等 **48 项运行时操作**（含 2 项场景快照操作），另有 **10 项离线管理/场景快照工具**。CLI 和 MCP 共享官方 MCP C# SDK / 强类型接口，支持同一台机器上的多个 Godot 项目及进程。
 
 ## 交给 AI 安装（推荐）
 
@@ -33,6 +33,26 @@ Skill 是**单文件、自包含**的：无需先克隆仓库或安装 .NET SDK�
 ```
 
 MCP 客户端配置中把 `command` 指向解压后 **`godot-mcp-server` 的绝对路径**，不需要额外参数。CLI 和 MCP 的工具发现、项目查询和后端安装可以在没有运行中的 Godot 游戏时使用。
+
+## Runtime Black Box：完整场景 Checkpoint 与 `.tscn` 导出（源码开发版）
+
+在运行中的 Godot 4 .NET 游戏里可捕获**可观察的完整节点拓扑**，包括没有设置 Owner 的动态节点、支持序列化的属性及其共享 Resource 图。快照持久存储在本机，关闭游戏后仍可通过 CLI/MCP 查询，再由**另一个 Godot Mono Headless 进程**导出并重新加载验证 `.tscn`：
+
+```sh
+# 通过 tools --search snapshot 获取当前版本支持的确切命令和 Schema
+godot-runtime-cli godot-snapshot-capture --project /absolute/path/to/game --strict true
+godot-runtime-cli godot-snapshot-job-status --project /absolute/path/to/game --job-id JOB_ID
+godot-runtime-cli godot-snapshot-list --project /absolute/path/to/game
+godot-runtime-cli godot-snapshot-info --project /absolute/path/to/game --snapshot-id SNAPSHOT_ID
+godot-runtime-cli godot-snapshot-nodes --project /absolute/path/to/game --snapshot-id SNAPSHOT_ID --limit 50
+# 游戏可已退出；需要完整可编译的原 Godot .NET 项目
+godot-runtime-cli godot-snapshot-export-tscn --project /absolute/path/to/game --snapshot-id SNAPSHOT_ID
+godot-runtime-cli godot-snapshot-export-status --project /absolute/path/to/game --job-id EXPORT_JOB_ID
+```
+
+导出的文件包括 `scene.tscn`、`runtime_state.json`、`dependencies.json` 与 `reconstruction_report.json`。严格导出会比对重新加载的节点、属性和 Resource 引用，发现缺失则拒绝报告完整成功。Godot 原生 `.tscn` 不保证支持循环 Resource、任意 C# 私有变量、物理内部状态或确定性回放；连续时间轴录制是下一阶段工作。
+
+**发布说明：** 上述新功能目前属于源代码实施分支，不能假设 GitHub 上既有的 v3.1.0 发行包已包含它。使用前需构建含此功能的 CLI 并更新游戏插件。
 
 ## 要求与安全
 

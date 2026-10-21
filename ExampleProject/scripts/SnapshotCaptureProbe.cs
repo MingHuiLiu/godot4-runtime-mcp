@@ -26,6 +26,7 @@ public partial class SnapshotCaptureProbe : Node
             game.AddChild(enemy);
             var propsNode = new SnapshotPropertyProbe { Name = "PropertyProbe" };
             game.AddChild(propsNode);
+            propsNode.AddToGroup("snapshot_team", persistent: true);
             var r1 = new SnapshotGraphResource();
             var r2 = new SnapshotGraphResource();
             r1.Next = r2; r2.Next = r1;
@@ -55,6 +56,12 @@ public partial class SnapshotCaptureProbe : Node
                 entered != 0 || exited != 0)
                 throw new Exception("Owner-null tree capture missed or mutated nodes");
 
+            // Negative integration fixture: in-memory Resource cycles must not masquerade
+            // as a strictly restorable .tscn after Godot's native serializer loses an edge.
+            string fixtureRoot = System.Environment.GetEnvironmentVariable("GODOT_MCP_CONFIG_DIR")!;
+            System.Threading.Tasks.Task.Run(() => CheckpointArchive.CommitAsync(
+                System.IO.Path.Combine(fixtureRoot, "fixtures", "cyclic_snapshot"),
+                first, System.Threading.CancellationToken.None)).GetAwaiter().GetResult();
             var rebuilt = SnapshotSceneBuilder.Build(first, true);
             try
             {
@@ -100,7 +107,7 @@ public partial class SnapshotCaptureProbe : Node
             // Keep the cycle in the in-memory builder probe, but export a round-trippable
             // scene in the separate end-to-end worker test.
             propsNode.CustomResource = null;
-            _controller = new CaptureJobController(this);
+            _controller = new CaptureJobController(this, () => "probe_instance");
             var started = _controller.Start(game.GetPath().ToString(), true, 2000);
             if (started.Status != "pending") throw new Exception("Capture did not queue asynchronously");
             var busy = _controller.Start(game.GetPath().ToString(), true, 2000);
@@ -128,8 +135,12 @@ public partial class SnapshotCaptureProbe : Node
         if (status.Status == "completed")
         {
             string root = System.Environment.GetEnvironmentVariable("GODOT_MCP_CONFIG_DIR")!;
-            if (System.IO.Directory.GetFiles(root, "manifest.json", System.IO.SearchOption.AllDirectories).Length == 0)
-                throw new Exception("Completed capture lacks committed manifest");
+            var files = System.IO.Directory.GetFiles(System.IO.Path.Combine(root, "recordings"), "manifest.json", System.IO.SearchOption.AllDirectories);
+            if (files.Length == 0) throw new Exception("Completed capture lacks committed manifest");
+            var manifest = System.Text.Json.JsonSerializer.Deserialize(
+                System.IO.File.ReadAllText(files[0]), SnapshotJsonContext.Default.CheckpointManifest);
+            if (manifest?.InstanceId != "probe_instance")
+                throw new Exception("Checkpoint lost originating runtime instance ID");
             GD.Print("SNAPSHOT_JOB_PASS: async capture persisted and returned completed status");
             GetTree().Quit(0);
         }

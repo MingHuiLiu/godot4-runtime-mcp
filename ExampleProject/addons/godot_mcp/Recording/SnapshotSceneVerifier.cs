@@ -21,6 +21,21 @@ public static class SnapshotSceneVerifier
                 issues.Add(new SnapshotIssue("node_mismatch", expected.NodeId, null,
                     $"Expected {expected.Name}/{expected.NativeClass}; got {actual.Name}/{actual.GetClass()}"));
             live[expected.NodeId] = actual;
+            if (!string.IsNullOrEmpty(expected.ScriptPath) &&
+                actual.GetScript().As<Script>()?.ResourcePath != expected.ScriptPath)
+                issues.Add(new SnapshotIssue("script_mismatch", expected.NodeId, null,
+                    "Node script changed during native scene serialization"));
+            if (actual.UniqueNameInOwner != expected.UniqueNameInOwner)
+                issues.Add(new SnapshotIssue("unique_name_mismatch", expected.NodeId, null,
+                    "UniqueNameInOwner changed during scene serialization"));
+            foreach (string group in expected.Groups)
+                if (!actual.IsInGroup(group))
+                    issues.Add(new SnapshotIssue("group_mismatch", expected.NodeId, group,
+                        "Persistent group missing after reload"));
+            if (expected.NodeId != original.RootNodeId &&
+                actual.Owner != sceneRoot)
+                issues.Add(new SnapshotIssue("flatten_owner_mismatch", expected.NodeId, null,
+                    "Reconstructed descendant must be owned by the exported scene root"));
             var children = models.GetValueOrDefault(expected.NodeId) ?? [];
             var actualChildren = actual.GetChildren();
             if (children.Count != actualChildren.Count)

@@ -68,6 +68,9 @@ public partial class ExportWorker : Node
             .GetAwaiter().GetResult();
         var build = SnapshotSceneBuilder.Build(snapshot, request.Strict);
         Node? checkForCleanup = null;
+        var issues = build.Issues.ToList();
+        int expected = snapshot.Nodes.Count(n => !n.IsInternal);
+        int actual = 0;
         try
         {
             using var packed = new PackedScene();
@@ -83,9 +86,7 @@ public partial class ExportWorker : Node
             if (reloaded is null) throw new InvalidDataException("export_validation_failed: load");
             var check = reloaded.Instantiate();
             checkForCleanup = check;
-            int expected = snapshot.Nodes.Count(n => !n.IsInternal);
-            int actual = CountNodes(check);
-            var issues = build.Issues.ToList();
+            actual = CountNodes(check);
             if (actual != expected)
                 issues.Add(new SnapshotIssue("node_count_mismatch", null, null,
                     $"Expected {expected} nodes, got {actual}"));
@@ -115,6 +116,24 @@ public partial class ExportWorker : Node
             File.WriteAllText(reportPath, JsonSerializer.Serialize(result,
                 SnapshotJsonContext.Default.SceneExportResult));
             return Task.FromResult(result);
+        }
+        catch (Exception ex)
+        {
+            // Godot can return Error.Ok from ResourceSaver even when a cyclic
+            // Resource graph was not faithfully serialized. A failed export must
+            // not leave an apparently usable scene file behind.
+            Directory.CreateDirectory(output);
+            string scenePath = Path.Combine(output, "scene.tscn");
+            if (File.Exists(scenePath)) File.Delete(scenePath);
+            string reportPath = Path.Combine(output, "reconstruction_report.json");
+            if (issues.Count == 0)
+                issues.Add(new SnapshotIssue("export_validation_failed", null, null, ex.Message));
+            var failure = new SceneExportResult(
+                "failed", null, null, null, reportPath, "partial", issues, expected, actual,
+                "export_validation_failed", ex.Message);
+            File.WriteAllText(reportPath, JsonSerializer.Serialize(
+                failure, SnapshotJsonContext.Default.SceneExportResult));
+            return Task.FromResult(failure);
         }
         finally
         {

@@ -114,9 +114,10 @@ public sealed class ExportJobManager
             var result = JsonSerializer.Deserialize(
                 File.ReadAllText(report), SnapshotJsonContext.Default.SceneExportResult)
                 ?? throw new InvalidDataException("snapshot_corrupt: export report is empty");
-            if (result.Status == "completed")
-                return new SceneExportJobStatus(jobId, "completed", result.ScenePath,
-                    report, null, null);
+            if (result.Status is "completed" or "failed")
+                return new SceneExportJobStatus(jobId, result.Status,
+                    result.Status == "completed" ? result.ScenePath : null,
+                    report, result.Code, result.Message);
         }
         string statusFile = Path.Combine(jobDir, "status.json");
         if (!File.Exists(statusFile))

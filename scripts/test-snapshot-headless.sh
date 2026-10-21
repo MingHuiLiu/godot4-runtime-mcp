@@ -11,7 +11,7 @@ cat "$OUTPUT"
 grep -q 'SNAPSHOT_PROBE_PASS:' "$OUTPUT"
 grep -q 'SNAPSHOT_JOB_PASS:' "$OUTPUT"
 
-SNAPSHOT_MANIFEST=$(find "$TEMP_RECORDING_DIR" -name manifest.json -type f | head -1)
+SNAPSHOT_MANIFEST=$(find "$TEMP_RECORDING_DIR/recordings" -name manifest.json -type f | head -1)
 test -n "$SNAPSHOT_MANIFEST"
 SNAPSHOT_DIR=$(dirname "$SNAPSHOT_MANIFEST")
 EXPORT_DIR="$TEMP_RECORDING_DIR/export-result"
@@ -64,3 +64,22 @@ if [ "$SUCCESS" -ne 1 ]; then echo 'FAIL: offline export job not completed' >&2;
 cat "$OUTPUT"
 test -s "$TEMP_RECORDING_DIR/recordings/$(basename "$(dirname "$(dirname "$SNAPSHOT_DIR")")")/exports/$EXPORT_JOB_ID/output/scene.tscn"
 echo 'SNAPSHOT_HOST_EXPORT_PASS: CLI initiated asynchronous offline .tscn export'
+
+# Intentionally unsupported native serialization: preserve a structured failure report
+# instead of reporting the partial .tscn as a valid full restoration.
+CYCLIC_DIR="$TEMP_RECORDING_DIR/cyclic-output"
+CYCLIC_JOB="$TEMP_RECORDING_DIR/cyclic-job.json"
+printf '{"snapshotDirectory":"%s","exportDirectory":"%s","strict":true}\n' \
+    "$TEMP_RECORDING_DIR/fixtures/cyclic_snapshot" "$CYCLIC_DIR" > "$CYCLIC_JOB"
+if GODOT_MCP_EXPORT_WORKER=1 GODOT_MCP_CONFIG_DIR="$TEMP_RECORDING_DIR" \
+    "$GODOT_BIN" --headless --path "$ROOT/ExampleProject" \
+    --scene res://addons/godot_mcp/Recording/export_worker.tscn \
+    -- --snapshot-job "$CYCLIC_JOB" > "$OUTPUT" 2>&1; then
+    echo 'FAIL: cyclic Resource export falsely returned success' >&2
+    exit 1
+fi
+test -s "$CYCLIC_DIR/reconstruction_report.json"
+grep -q '"status":"failed"' "$CYCLIC_DIR/reconstruction_report.json"
+grep -q '"code":"export_validation_failed"' "$CYCLIC_DIR/reconstruction_report.json"
+test ! -f "$CYCLIC_DIR/scene.tscn"
+echo 'SNAPSHOT_EXPECTED_FAILURE_PASS: cyclic Resource reported as failed with diagnostic file'

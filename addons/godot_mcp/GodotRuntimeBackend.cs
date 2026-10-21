@@ -78,7 +78,7 @@ public partial class GodotRuntimeBackend : Node
         if (_instance != null) { QueueFree(); return; }
         _instance = this;
         ProcessMode = ProcessModeEnum.Always;
-        _capture = new CaptureJobController(this);
+        _capture = new CaptureJobController(this, () => _transport?.InstanceId);
         InitializeLogFile();
         InitializeSignalEventsFile();
         StartGlobalSignalMonitoring();

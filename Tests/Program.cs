@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using GodotRuntimeMcp;
@@ -24,8 +25,21 @@ try
     await CheckpointStoreTests.RunAsync(Assert, scratch);
     await ExportJobManagerTests.RunAsync(Assert, scratch);
     var tools = new ToolService();
-    Assert(tools.Catalog().Count == 58, "All 48 runtime tools plus 5 management tools available offline");
-    Assert(tools.CatalogModels.Count == 58 && tools.CatalogModels.All(t => t.InputSchema.Type == "object"),
+    using var canonicalManifest = JsonDocument.Parse(File.ReadAllText(
+        Path.Combine(root, "addons", "godot_mcp", "tool_manifest.json")));
+    var runtimeNames = canonicalManifest.RootElement.EnumerateArray()
+        .Select(item => item.GetProperty("name").GetString()!).ToArray();
+    var managementNames = new[] { "godot_status", "godot_list_instances", "godot_list_projects",
+        "godot_setup_guide", "godot_install_backend", "godot_snapshot_list",
+        "godot_snapshot_info", "godot_snapshot_nodes", "godot_snapshot_export_tscn",
+        "godot_snapshot_export_status" };
+    int expectedTools = runtimeNames.Length + managementNames.Length;
+    Assert(tools.Catalog().Count == expectedTools &&
+        runtimeNames.All(tools.Exists) && managementNames.All(tools.Exists) &&
+        tools.CatalogModels.Select(t => t.Name).Distinct().Count() == expectedTools,
+        "Every canonical runtime and offline management tool is registered exactly once");
+    Assert(tools.CatalogModels.Count == expectedTools &&
+        tools.CatalogModels.All(t => t.InputSchema.Type == "object"),
         "Canonical tool catalog deserializes into strongly typed ToolDefinition records");
     var github = JsonSerializer.Deserialize("""
         {"tag_name":"v3.1.0","assets":[{"name":"godot-runtime-addon.zip","browser_download_url":"https://example.invalid/addon.zip"}]}
@@ -41,7 +55,7 @@ try
     Assert(tools.Catalog().All(t =>
         ToolCommandLine.Resolve(tools, t!["name"]!.ToString().Replace('_', '-')) ==
             t["name"]!.ToString()),
-        "All 58 MCP tools have direct kebab-case CLI commands");
+        "All MCP tools have direct kebab-case CLI commands");
     var schemaFailures = new List<string>();
     foreach (var tool in tools.Catalog().OfType<JsonObject>())
     {
@@ -72,7 +86,7 @@ try
         catch (ArgumentException ex) { schemaFailures.Add(name + ": " + ex.Message); }
     }
     Assert(schemaFailures.Count == 0,
-        "All 58 CLI commands accept typed flags for every manifest property: " +
+        "All CLI commands accept typed flags for every manifest property: " +
             string.Join("; ", schemaFailures));
     var cliHelp = ToolCommandLine.Describe(ToolCommandLine.Find(tools, "get-node-info")!);
     Assert(cliHelp.Contains("--node-path") && cliHelp.Contains("(required)") &&
@@ -124,8 +138,7 @@ try
         standaloneSkill.Contains("godot-runtime-cli"),
         "Single standalone Skill describes GitHub CLI bootstrap and checksum verification");
     var backendImplementation = File.ReadAllText(Path.Combine(root, "addons", "godot_mcp", "GodotRuntimeBackend.cs"));
-    var missingDispatches = tools.Catalog().Take(48)
-        .Select(t => t!["name"]!.ToString())
+    var missingDispatches = runtimeNames
         .Where(name => !backendImplementation.Contains("\"" + name + "\" =>", StringComparison.Ordinal))
         .ToArray();
     Assert(missingDispatches.Length == 0,
@@ -150,6 +163,10 @@ try
     var installed = await BackendInstaller.InstallAsync(a, "local", path: source);
     Assert(installed.Status == "installed",
         "Install from local C# backend source into project with no running Godot");
+    Assert(File.Exists(Path.Combine(a, "addons", "godot_mcp", "Recording",
+            "SnapshotSceneBuilder.cs")) &&
+        File.Exists(Path.Combine(a, "addons", "godot_mcp", "Recording", "export_worker.tscn")),
+        "Installer copies nested recording addon files");
     var settings = await File.ReadAllTextAsync(Path.Combine(a, "project.godot"));
     Assert(settings.Contains("GodotRuntimeBackend=\"*res://addons/godot_mcp/runtime_backend.tscn\""),
         "Installer registers Godot autoload");
@@ -162,16 +179,34 @@ try
 
     // The example is a standalone Godot project with a checked-in addon copy.
     // Guard against drifting from the canonical backend used by releases.
+    var syncMirror = Path.Combine(scratch, "addon-sync-probe");
+    using (var sync = Process.Start(new ProcessStartInfo("sh")
+    {
+        ArgumentList = { Path.Combine(root, "scripts", "sync-example-addon.sh"), syncMirror },
+        UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true
+    })!)
+    {
+        await sync.WaitForExitAsync();
+        Assert(sync.ExitCode == 0 && File.Exists(Path.Combine(syncMirror, "Recording",
+            "SnapshotSceneBuilder.cs")) && File.Exists(Path.Combine(syncMirror, "Recording",
+            "export_worker.tscn")),
+            "Canonical addon sync copies nested recording files recursively to alternate destination");
+    }
     var canonical = Path.Combine(root, "addons", "godot_mcp");
     var bundledExample = Path.Combine(root, "ExampleProject", "addons", "godot_mcp");
-    var canonicalFiles = Directory.GetFiles(canonical).Select(Path.GetFileName).Order().ToArray();
-    var exampleFiles = Directory.GetFiles(bundledExample)
-        .Where(path => !path.EndsWith(".uid", StringComparison.Ordinal))
-        .Select(Path.GetFileName).Order().ToArray();
+    static string[] RelativeAddonFiles(string directory) =>
+        Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(path => !path.EndsWith(".uid", StringComparison.Ordinal) &&
+                           !path.EndsWith(".import", StringComparison.Ordinal) &&
+                           !path.EndsWith(".DS_Store", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(directory, path).Replace('\\', '/'))
+            .Order(StringComparer.Ordinal).ToArray();
+    var canonicalFiles = RelativeAddonFiles(canonical);
+    var exampleFiles = RelativeAddonFiles(bundledExample);
     Assert(canonicalFiles.SequenceEqual(exampleFiles) &&
-        canonicalFiles.All(name => File.ReadAllBytes(Path.Combine(canonical, name!))
-            .AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(bundledExample, name!)))),
-        "Standalone Godot example addon matches canonical release backend");
+        canonicalFiles.All(name => File.ReadAllBytes(Path.Combine(canonical, name))
+            .AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(bundledExample, name)))),
+        "Recursive Godot example addon matches every canonical release file");
 
     // Old v3 autoload should be migrated instead of creating two live backends.
     var legacyProject = Path.Combine(scratch, "legacy-autoload");
@@ -188,6 +223,10 @@ try
     await BackendInstaller.PackAsync(source, zip);
     Assert(File.Exists(zip) && new FileInfo(zip).Length > 1000,
         "Release archive packaging creates ZIP with C# backend");
+    using (var package = ZipFile.OpenRead(zip))
+        Assert(package.GetEntry("addons/godot_mcp/Recording/SnapshotSceneBuilder.cs") is not null &&
+            package.GetEntry("addons/godot_mcp/Recording/export_worker.tscn") is not null,
+            "Release ZIP retains nested runtime recording files");
     var b = Path.Combine(scratch, "game-b");
     Directory.CreateDirectory(b);
     await File.WriteAllTextAsync(Path.Combine(b, "project.godot"),
@@ -271,13 +310,13 @@ try
     await GodotRuntimeMcp.Tests.McpSdkSmoke.RunAsync(
         typeof(ToolService).Assembly.Location,
         Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ??
-        (File.Exists(homeDotnet) ? homeDotnet : "dotnet"));
-    Assert(true, "Official MCP SDK client initializes, lists 58 tools and invokes offline status over stdio");
+        (File.Exists(homeDotnet) ? homeDotnet : "dotnet"), expectedTools);
+    Assert(true, "Official MCP SDK client discovers all runtime and offline tools over stdio");
     await GodotRuntimeMcp.Tests.McpSdkSmoke.RunHttpAsync(
         typeof(ToolService).Assembly.Location,
         Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ??
-        (File.Exists(homeDotnet) ? homeDotnet : "dotnet"));
-    Assert(true, "Official MCP SDK HTTP client authenticates, lists 58 tools and invokes offline status");
+        (File.Exists(homeDotnet) ? homeDotnet : "dotnet"), expectedTools);
+    Assert(true, "Official MCP SDK HTTP client discovers all tools");
 
     Console.WriteLine($"\nALL {passed} ASSERTIONS PASSED");
     return 0;

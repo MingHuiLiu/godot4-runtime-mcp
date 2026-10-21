@@ -17,7 +17,7 @@ compatibility: >-
 
 # Godot Runtime MCP
 
-Operate a **running Godot 4 .NET game**, not the Godot editor's static scene files. The host exposes 46 game tools and five setup/status tools via an MCP server and a standalone CLI. This skill is deliberately **self-contained**: assume no other file, script, repository checkout, SDK, or MCP configuration accompanies it.
+Operate a **running Godot 4 .NET game**, not the Godot editor's static scene files. The current source build exposes 48 runtime tools and 10 offline management/snapshot tools via an MCP server and a standalone CLI. This skill is deliberately **self-contained**: assume no other file, script, repository checkout, SDK, or MCP configuration accompanies it.
 
 ## Workflow
 
@@ -43,7 +43,7 @@ CLI=$(command -v godot-runtime-cli 2>/dev/null || true)
 
 If `version` fails, use [Standalone bootstrap](#standalone-bootstrap) only after diagnosing an absent or incompatible executable; do not silently overwrite an existing installation.
 
-The CLI accepts **direct kebab-case commands** for all 51 MCP tools. Options are generated from the embedded tool manifest; use `--help` to discover the actual parameters and required fields. You can also run `tools --json` for the complete schema.
+The CLI accepts **direct kebab-case commands** for all tools (58 in this source build; older releases may differ). Options are generated from the embedded tool manifest; use `--help` to discover the actual parameters and required fields. You can also run `tools --json` for the complete schema.
 
 ### Read-only inspection
 
@@ -58,6 +58,21 @@ Replace example paths and IDs with results from `instances` and `get-scene-tree-
 ```
 
 These paths are illustrative, not guaranteed nodes. Inspect the actual tree before choosing a path. To disambiguate processes, append `--instance ACTUAL_INSTANCE_ID`; a unique prefix is accepted. A screenshot tool is also available: discover `take-screenshot --help`, then inspect its returned result and file path rather than assuming an image was saved.
+
+### Record and reconstruct a scene checkpoint (source build)
+
+Use these commands only with a compiled, trusted Godot 4 .NET project and a backend version that advertises the snapshot tools. The existing published v3.1.0 release may not contain these additions.
+
+```sh
+"$CLI" godot-snapshot-capture --project "/absolute/path/to/game" --strict true
+"$CLI" godot-snapshot-job-status --project "/absolute/path/to/game" --job-id JOB_ID
+"$CLI" godot-snapshot-list --project "/absolute/path/to/game"
+"$CLI" godot-snapshot-nodes --project "/absolute/path/to/game" --snapshot-id SNAPSHOT_ID --limit 50
+"$CLI" godot-snapshot-export-tscn --project "/absolute/path/to/game" --snapshot-id SNAPSHOT_ID
+"$CLI" godot-snapshot-export-status --project "/absolute/path/to/game" --job-id EXPORT_JOB_ID
+```
+
+The export command uses a separate Godot Mono process and remains possible after the original game exits. Inspect `reconstruction_report.json` before treating `scene.tscn` as complete: internal nodes, unsupported properties and cyclic Resources can prevent strict restoration. Script private fields, live threads, and deterministic time-travel are not captured.
 
 ### Explicit runtime modifications
 

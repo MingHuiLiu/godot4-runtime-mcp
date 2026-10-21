@@ -30,6 +30,7 @@ internal sealed class GodotRuntimeTransport : IDisposable
     private readonly Queue<WorkItem> _pending = new();
     private readonly string _token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
     private readonly string _instanceId = Guid.NewGuid().ToString("N");
+    public string InstanceId => _instanceId;
     private readonly int _pid = Environment.ProcessId;
     private readonly string _projectPath;
     private readonly string _registryDirectory;

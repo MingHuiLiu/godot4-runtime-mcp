@@ -23,10 +23,15 @@ public sealed class CaptureJobController
     }
 
     private readonly Node _backend;
+    private readonly Func<string?>? _getInstanceId;
     private readonly object _sync = new();
     private Job? _latest;
 
-    public CaptureJobController(Node backend) => _backend = backend;
+    public CaptureJobController(Node backend, Func<string?>? getInstanceId = null)
+    {
+        _backend = backend;
+        _getInstanceId = getInstanceId;
+    }
 
     public SnapshotJobInfo Start(string? rootPath, bool strict, int maxNodes = 2000)
     {
@@ -89,7 +94,7 @@ public sealed class CaptureJobController
             string projectId = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(projectPath)))
                 .ToLowerInvariant();
             var snapshot = SceneCheckpointCapture.Capture(root, job.SnapshotId,
-                job.SessionId, projectId, Guid.NewGuid().ToString("N"), job.Strict);
+                job.SessionId, projectId, _getInstanceId?.Invoke() ?? "unregistered", job.Strict);
             if (snapshot.Nodes.Count > job.MaxNodes)
             {
                 Fail(job, "capture_limit_exceeded", "Captured node count exceeds requested maxNodes");

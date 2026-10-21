@@ -25,6 +25,7 @@ dotnet run --project Tests/Tests.csproj -c Release
 ./scripts/godot-runtime-cli-dev.sh status
 ./scripts/godot-runtime-cli-dev.sh pack --path . --out /tmp/godot-runtime-addon.zip
 dotnet build ExampleProject/ExampleProject.csproj
+GODOT_BIN=/Applications/Godot_mono.app/Contents/MacOS/Godot sh scripts/test-snapshot-headless.sh
 # 具体 Godot 可执行文件位置因机器而异
 godot --headless --path ExampleProject
 ```
@@ -57,3 +58,11 @@ godot --headless --path ExampleProject
 - `System.IO.Compression.ZipArchive`（BCL）：带路径校验的 ZIP 读取/打包；GitHub Release 元数据使用 `GithubRelease` record。
 
 **不要再自行解析 MCP JSON-RPC 或 HTTP 会话。** 项目采用官方 SDK；只在 Godot Variant 和自定义工具 JSON Schema 的边界操作 `JsonElement`/`JsonObject`。项目代码可做零警告常规构建；Native AOT 在 .NET 8 的 ASP.NET Core Framework Reference 内仍可能发出外部依赖裁剪分析提示（目前 IL2026/IL3053），并非自行忽略的安全保证。改动 Native AOT 依赖后必须真实发布、使用官方 MCP SDK 客户端运行测试。
+
+## 场景快照 / .tscn 还原开发
+
+新增 Recording C# 文件只能放在 `addons/godot_mcp/Recording/` 作为单一规范来源；共享数据契约 `SnapshotContracts.cs` / `CheckpointArchive.cs` / `SnapshotJsonContext.cs` 也被 RuntimeHost.csproj 编译。先运行 `sh scripts/sync-example-addon.sh` 将嵌套插件复制到 ExampleProject，再执行 .NET 单元测试与真实 Godot Mono Headless 探针。
+
+`scripts/test-snapshot-headless.sh` 覆盖动态 Owner-null 节点、循环/共享 Resource 的内存重建、容量限制、异步落盘、独立进程的 `.tscn` 严格加载验证，以及游戏退出后由 CLI 启动的离线导出。脚本使用独立临时录制目录，避免覆盖用户项目文件。继续扩展时先加失败测试，再实现。
+
+默认输出位于 `GODOT_MCP_CONFIG_DIR/recordings/<project-id>/<session-id>/<snapshot-id>/` 下；离线导出存储于项目录制目录的 `exports/<job-id>/output/`。如需使用另一个 Godot Mono 程序，通过 `GODOT_BIN` 或 CLI 的 `--godot-binary` 指定。

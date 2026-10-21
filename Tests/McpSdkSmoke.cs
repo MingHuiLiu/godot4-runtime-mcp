@@ -9,7 +9,7 @@ namespace GodotRuntimeMcp.Tests;
 /// <summary>Real SDK-to-SDK transport test; no private JSON-RPC parser or handcrafted frames.</summary>
 internal static class McpSdkSmoke
 {
-    public static async Task RunAsync(string hostDll, string dotnetPath)
+    public static async Task RunAsync(string hostDll, string dotnetPath, int expectedToolCount)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var nativeHost = Environment.GetEnvironmentVariable("GODOT_RUNTIME_NATIVE_HOST");
@@ -21,14 +21,14 @@ internal static class McpSdkSmoke
         });
         await using var client = await McpClient.CreateAsync(transport, cancellationToken: timeout.Token);
         var tools = await client.ListToolsAsync(cancellationToken: timeout.Token);
-        if (tools.Count != 58)
-            throw new Exception($"SDK client expected 58 tools, got {tools.Count}");
+        if (tools.Count != expectedToolCount)
+            throw new Exception($"SDK client expected {expectedToolCount} tools, got {tools.Count}");
         var response = await client.CallToolAsync("godot_status", cancellationToken: timeout.Token);
         if (response.IsError == true)
             throw new Exception("SDK client godot_status returned a tool error");
     }
 
-    public static async Task RunHttpAsync(string hostDll, string dotnetPath)
+    public static async Task RunHttpAsync(string hostDll, string dotnetPath, int expectedToolCount)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -80,8 +80,8 @@ internal static class McpSdkSmoke
             });
             await using var mcp = await McpClient.CreateAsync(transport, cancellationToken: timeout.Token);
             var tools = await mcp.ListToolsAsync(cancellationToken: timeout.Token);
-            if (tools.Count != 58)
-                throw new Exception($"HTTP client expected 58 tools, got {tools.Count}");
+            if (tools.Count != expectedToolCount)
+                throw new Exception($"HTTP client expected {expectedToolCount} tools, got {tools.Count}");
             var result = await mcp.CallToolAsync("godot_status", cancellationToken: timeout.Token);
             if (result.IsError == true)
                 throw new Exception("MCP HTTP godot_status failed");

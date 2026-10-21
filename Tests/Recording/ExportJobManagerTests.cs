@@ -24,6 +24,25 @@ public static class ExportJobManagerTests
         assert(notFound.Status == "failed" && notFound.Code == "export_engine_unavailable",
             "Offline export refuses missing Godot Mono executable");
 
+        // A failed verification must remain inspectable by an AI after the worker exits.
+        var failedJobDir = Path.Combine(RuntimeRegistry.ConfigRoot, "recordings",
+            projectId, "exports", "export_fixture", "output");
+        Directory.CreateDirectory(failedJobDir);
+        var failedReport = new SceneExportResult("failed", null, null, null,
+            Path.Combine(failedJobDir, "reconstruction_report.json"), "partial",
+            new() { new SnapshotIssue("resource_property_mismatch", null,
+                "r_2.Next", "Cyclic Resource edge missing") },
+            2, 2, "export_validation_failed", "Cyclic Resource graph cannot be faithfully reloaded");
+        await File.WriteAllTextAsync(Path.Combine(failedJobDir, "reconstruction_report.json"),
+            System.Text.Json.JsonSerializer.Serialize(failedReport,
+                SnapshotJsonContext.Default.SceneExportResult));
+        var failedStatus = manager.Status(project, "export_fixture");
+        assert(failedStatus.Status == "failed" &&
+               failedStatus.Code == "export_validation_failed" &&
+               failedStatus.ReportPath is not null &&
+               failedStatus.Message!.Contains("Cyclic Resource"),
+            "Failed export status surfaces persisted reconstruction report and exact error");
+
         bool invalidId = false;
         try { manager.Status(project, "../escape"); }
         catch (ArgumentException) { invalidId = true; }
