@@ -70,3 +70,7 @@ godot --headless --path ExampleProject
 场景探针还覆盖整数向量/矩形、Plane/Projection、PackedVector4 数组、非有限值拒绝、总编码字节上限、资源数量限制、外部资源的文件哈希与未保存内存更改。引入新的 Godot RefCounted 测试资源时，务必断开测试数据构造出的循环并在退出引擎前释放临时资源；测试脚本应重复执行验证 Godot 的原生退出稳定性。
 
 严格导出另外覆盖两条必须失败的路径：Godot 原生序列化无法保留循环 Resource 引用，以及 Checkpoint 引用的磁盘资源被删除/替换。两种情况均应在允许的输出目录生成 `reconstruction_report.json`（含 `failed` 状态与错误码），并且不得保留不完整的 `scene.tscn`。工作进程的错误处理涵盖归档读取和 SceneBuilder 失败，而不只是 PackedScene.Save/Reload。
+
+## Runtime timeline integration
+
+Run `sh scripts/test-timeline-headless.sh` with a local Godot 4 Mono executable (`GODOT_BIN` overrides the default macOS path). The test starts a bounded recording, alters scene nodes between observations, verifies persisted add/rename/remove events, starts a second recording and stops it, exits Godot, then runs separate offline CLI calls to list, inspect, and page sessions. Pure host tests cover schema limits, resource/diagnostic diffs, archive tamper detection and project isolation. The recording deliberately has a hard sampling quota and does not attempt deterministic replay or capture events between sampling frames.

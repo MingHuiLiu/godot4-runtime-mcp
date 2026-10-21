@@ -85,7 +85,7 @@ public sealed class TimelineStore
     {
         string root = Resolve(project, sessionId);
         var status = Info(project, sessionId);
-        for (int i = offset; i < Math.Min(status.SampleCount, offset + limit); i++)
+        for (int i = offset; i < Math.Min((long)status.SampleCount, (long)offset + limit); i++)
         {
             string name = i.ToString("D6");
             AssertNoLink(Path.Combine(root, "batches", name + ".json"));

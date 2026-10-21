@@ -68,6 +68,25 @@ public static class TimelineDeltaBuilder
             if (old.Name != node.Name)
                 Add(new TimelineEvent("node_renamed", node.NodeId,
                     OldText: old.Name, NewText: node.Name));
+            if (!old.Groups.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(
+                node.Groups.OrderBy(x => x, StringComparer.Ordinal)))
+                Add(new TimelineEvent("groups_changed", node.NodeId,
+                    OldText: string.Join(",", old.Groups.OrderBy(x => x, StringComparer.Ordinal)),
+                    NewText: string.Join(",", node.Groups.OrderBy(x => x, StringComparer.Ordinal))));
+            if (old.ScriptPath != node.ScriptPath)
+                Add(new TimelineEvent("script_changed", node.NodeId,
+                    OldText: old.ScriptPath, NewText: node.ScriptPath));
+            if (old.OriginalOwnerId != node.OriginalOwnerId)
+                Add(new TimelineEvent("owner_changed", node.NodeId,
+                    OldText: old.OriginalOwnerId, NewText: node.OriginalOwnerId));
+            foreach (string key in old.DiagnosticProperties.Keys.Union(
+                node.DiagnosticProperties.Keys, StringComparer.Ordinal))
+            {
+                old.DiagnosticProperties.TryGetValue(key, out var a);
+                node.DiagnosticProperties.TryGetValue(key, out var b);
+                if (!EqualsValue(a, b))
+                    Add(new TimelineEvent("diagnostic_changed", node.NodeId, key, a, b));
+            }
 
             foreach (string key in old.Properties.Keys.Union(node.Properties.Keys, StringComparer.Ordinal))
             {
@@ -76,6 +95,33 @@ public static class TimelineDeltaBuilder
                 if (!EqualsValue(a, b))
                     Add(new TimelineEvent("property_changed", node.NodeId,
                         key, a, b));
+            }
+        }
+        var oldResources = before.Resources.ToDictionary(r => r.ResourceId, StringComparer.Ordinal);
+        var newResources = after.Resources.ToDictionary(r => r.ResourceId, StringComparer.Ordinal);
+        foreach (var resource in before.Resources)
+            if (!newResources.ContainsKey(resource.ResourceId))
+                Add(new TimelineEvent("resource_removed", resource.ResourceId,
+                    OldText: resource.ResourcePath ?? resource.ClassName));
+        foreach (var resource in after.Resources)
+        {
+            if (!oldResources.TryGetValue(resource.ResourceId, out var old))
+            {
+                Add(new TimelineEvent("resource_added", resource.ResourceId,
+                    NewText: resource.ResourcePath ?? resource.ClassName));
+                continue;
+            }
+            if (old.ResourcePath != resource.ResourcePath || old.Sha256 != resource.Sha256 ||
+                old.ClassName != resource.ClassName)
+                Add(new TimelineEvent("resource_metadata_changed", resource.ResourceId,
+                    OldText: old.ResourcePath ?? old.ClassName,
+                    NewText: resource.ResourcePath ?? resource.ClassName));
+            foreach (var key in old.Properties.Keys.Union(resource.Properties.Keys, StringComparer.Ordinal))
+            {
+                old.Properties.TryGetValue(key, out var a);
+                resource.Properties.TryGetValue(key, out var b);
+                if (!EqualsValue(a, b))
+                    Add(new TimelineEvent("resource_property_changed", resource.ResourceId, key, a, b));
             }
         }
         return new TimelineBatch(SchemaVersion, after.SessionId, sampleIndex,

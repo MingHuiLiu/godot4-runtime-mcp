@@ -2,7 +2,7 @@
 
 **让 AI 直接检查和调试正在运行的 Godot 4 .NET 游戏。** 提供独立 `godot-runtime-cli`、标准 MCP Server 和可自行安装的 [Agent Skill](skills/godot-runtime/SKILL.md)。
 
-支持场景树、节点属性、方法调用、信号、日志、截图等 **48 项运行时操作**（含 2 项场景快照操作），另有 **10 项离线管理/场景快照工具**。CLI 和 MCP 共享官方 MCP C# SDK / 强类型接口，支持同一台机器上的多个 Godot 项目及进程。
+支持场景树、节点属性、方法调用、信号、日志、截图等 **51 项运行时操作**（含快照采集和时间线录制），另有 **13 项离线管理/查询工具**。CLI 和 MCP 共享官方 MCP C# SDK / 强类型接口，支持同一台机器上的多个 Godot 项目及进程。
 
 ## 交给 AI 安装（推荐）
 
@@ -53,6 +53,24 @@ godot-runtime-cli godot-snapshot-export-status --project /absolute/path/to/game 
 导出的文件包括 `scene.tscn`、`runtime_state.json`、`dependencies.json` 与 `reconstruction_report.json`。严格导出会比对重新加载的节点、属性和 Resource 引用，发现缺失则拒绝报告完整成功。外部 Resource 还会保留源文件 SHA-256、检查内存是否偏离磁盘，并在导出时验证文件未发生变化。Godot 原生 `.tscn` 不保证支持循环 Resource、任意 C# 私有变量、物理内部状态或确定性回放；连续时间轴录制是下一阶段工作。
 
 **发布说明：** 上述新功能目前属于源代码实施分支，不能假设 GitHub 上既有的 v3.1.0 发行包已包含它。使用前需构建含此功能的 CLI 并更新游戏插件。
+
+## Runtime Black Box：连续观察时间线（源码开发版）
+
+在已安装并运行的 Godot 4 .NET 项目中，可按指定间隔**主动启动有界采样录制**，得到一段包含 Scene Checkpoint 和节点变化事件的时间线。每个周期保存可验证的 Checkpoint，随后计算节点新增、移除、移动、改名、组/脚本/Owner、已支持属性和 Resource 属性的可观察变化；同时保留帧序号、前后 Snapshot ID、跳过的采样周期数量。
+
+```sh
+# 在运行中的游戏上启动录制；每 30 次 _Process 检查采样一次，最多 60 个样本
+godot-runtime-cli godot-timeline-start --project /absolute/path/to/game --sample-every-frames 30 --max-samples 60
+godot-runtime-cli godot-timeline-status --project /absolute/path/to/game --session-id SESSION_ID
+godot-runtime-cli godot-timeline-stop --project /absolute/path/to/game --session-id SESSION_ID
+
+# 游戏退出后仍可通过独立的 CLI 进程查询
+godot-runtime-cli godot-timeline-sessions --project /absolute/path/to/game
+godot-runtime-cli godot-timeline-info --project /absolute/path/to/game --session-id SESSION_ID
+godot-runtime-cli godot-timeline-events --project /absolute/path/to/game --session-id SESSION_ID --offset 0 --limit 20
+```
+
+归档位于原项目对应的私有录制目录内。事件是**两个实际观察点之间的状态差异**，不等于所有中间瞬时发生的事件；因此这不是输入/信号全量追踪、逐帧视频，也不是确定性时间回放。若游戏变化快于采样或文件写入速度，可能漏掉中间状态，报告会保留丢失采样数量。可从时间线中的 Snapshot ID 再用离线场景导出工具恢复具体采样点的 `.tscn`。
 
 ## 要求与安全
 

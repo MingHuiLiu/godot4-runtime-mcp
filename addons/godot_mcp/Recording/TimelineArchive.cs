@@ -116,6 +116,8 @@ public static class TimelineArchive
         if (terminalStatus is not ("stopped" or "completed" or "failed"))
             throw new ArgumentException("timeline_invalid_terminal_status");
         var previous = ReadStatus(directory);
+        if (previous.Status != "running")
+            throw new InvalidDataException("timeline_terminal_state: session is no longer running");
         var next = previous with { Status = terminalStatus, Code = code, Message = message,
             DroppedSamples = previous.DroppedSamples + Math.Max(0, skippedSamples) };
         await PublishStatusAsync(directory, next, ct);
@@ -128,7 +130,7 @@ public static class TimelineArchive
             throw new ArgumentOutOfRangeException(nameof(limit));
         var status = ReadStatus(directory);
         var rows = new List<TimelineBatch>();
-        for (int index = offset; index < Math.Min(status.SampleCount, offset + limit); index++)
+        for (int index = offset; index < Math.Min((long)status.SampleCount, (long)offset + limit); index++)
         {
             string name = index.ToString("D6");
             string dataPath = Path.Combine(directory, "batches", name + ".json");

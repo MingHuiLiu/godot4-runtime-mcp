@@ -27,6 +27,12 @@ public static class TimelineArchiveTests
         await TimelineArchive.CompleteAsync(root, "stopped", CancellationToken.None);
         assert(TimelineArchive.ReadStatus(root).Status == "stopped",
             "Stopped timeline remains inspectable without a running game");
+        bool reopened = false;
+        try { await TimelineArchive.CompleteAsync(root, "completed", CancellationToken.None); }
+        catch (InvalidDataException e) { reopened = e.Message.Contains("timeline_terminal_state"); }
+        assert(reopened, "Terminal timeline status cannot be silently rewritten");
+        assert(TimelineArchive.ReadPage(root, int.MaxValue, 10).Items.Count == 0,
+            "Very large page offset does not overflow or return stale events");
         bool invalidSchema = false;
         try { await TimelineArchive.CreateAsync(Path.Combine(scratch, "timeline-future"),
             session with { SchemaVersion = 2 }, CancellationToken.None); }

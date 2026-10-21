@@ -16,3 +16,8 @@ godot --headless --path ExampleProject
 ## Runtime scene checkpoint integration probe
 
 From the repository root, run `sh scripts/test-snapshot-headless.sh` (set `GODOT_BIN` if Godot Mono is not installed at the macOS default path). The probe builds the C# example, captures a dynamic Owner-null node tree, verifies an isolated reconstruction, persists a checkpoint, exits the game, and verifies both direct and CLI-triggered Headless `.tscn` export. The test uses temporary directories and cleans up its files.
+
+
+## Runtime timeline integration probe
+
+From the repository root run `sh scripts/test-timeline-headless.sh` (set `GODOT_BIN` for a nondefault Godot Mono path). The test first captures an observable add/rename/remove timeline, then stops another recording, and finally verifies offline query tools in a different CLI process after Godot quits. All samples are isolated in a temporary folder and deleted after verification.

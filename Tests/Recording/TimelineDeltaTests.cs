@@ -33,6 +33,29 @@ public static class TimelineDeltaTests
                batch.SampleIndex == 1 && batch.ObservedProcessFrame == 300,
             "Timeline batches identify two observed sample boundaries, not continuous truth");
 
+        var aResource = new RecordedResource("r_1", "RectangleShape2D", null, null,
+            false, new() { ["height"] = new SnapshotValue("int64", JsonValue.Create(2)) }, new());
+        var bResource = aResource with { Properties = new() {
+            ["height"] = new SnapshotValue("int64", JsonValue.Create(7)) } };
+        var aEnriched = a with { Resources = new() { aResource }, Nodes = a.Nodes
+            .Select(n => n.NodeId != "n1" ? n : n with {
+                DiagnosticProperties = new() {
+                    ["global_position"] = new SnapshotValue("vector2",
+                        JsonNode.Parse("{\"x\":1,\"y\":2}")) }
+            }).ToList() };
+        var bEnriched = b with { Resources = new() { bResource }, Nodes = b.Nodes
+            .Select(n => n.NodeId != "n1" ? n : n with {
+                Groups = new() { "enemy" },
+                DiagnosticProperties = new() {
+                    ["global_position"] = new SnapshotValue("vector2",
+                        JsonNode.Parse("{\"x\":5,\"y\":8}")) }
+            }).ToList() };
+        var changes = TimelineDeltaBuilder.Compare(aEnriched, bEnriched, 1, 301);
+        assert(changes.Events.Any(e => e.Kind == "diagnostic_changed" && e.NodeId == "n1") &&
+               changes.Events.Any(e => e.Kind == "groups_changed" && e.NodeId == "n1") &&
+               changes.Events.Any(e => e.Kind == "resource_property_changed" &&
+                   e.NodeId == "r_1" && e.Property == "height"),
+            "Timeline reports observed diagnostic, group and Resource property changes");
         bool rejected = false;
         try { TimelineDeltaBuilder.Compare(a with { SchemaVersion = 999 }, b, 1, 300); }
         catch (NotSupportedException) { rejected = true; }

@@ -17,7 +17,7 @@ compatibility: >-
 
 # Godot Runtime MCP
 
-Operate a **running Godot 4 .NET game**, not the Godot editor's static scene files. The current source build exposes 48 runtime tools and 10 offline management/snapshot tools via an MCP server and a standalone CLI. This skill is deliberately **self-contained**: assume no other file, script, repository checkout, SDK, or MCP configuration accompanies it.
+Operate a **running Godot 4 .NET game**, not the Godot editor's static scene files. The current source build exposes 51 runtime tools and 13 offline management/snapshot/timeline tools via an MCP server and a standalone CLI. This skill is deliberately **self-contained**: assume no other file, script, repository checkout, SDK, or MCP configuration accompanies it.
 
 ## Workflow
 
@@ -43,7 +43,7 @@ CLI=$(command -v godot-runtime-cli 2>/dev/null || true)
 
 If `version` fails, use [Standalone bootstrap](#standalone-bootstrap) only after diagnosing an absent or incompatible executable; do not silently overwrite an existing installation.
 
-The CLI accepts **direct kebab-case commands** for all tools (58 in this source build; older releases may differ). Options are generated from the embedded tool manifest; use `--help` to discover the actual parameters and required fields. You can also run `tools --json` for the complete schema.
+The CLI accepts **direct kebab-case commands** for all tools (64 in this source build; older releases may differ). Options are generated from the embedded tool manifest; use `--help` to discover the actual parameters and required fields. You can also run `tools --json` for the complete schema.
 
 ### Read-only inspection
 
@@ -73,6 +73,21 @@ Use these commands only with a compiled, trusted Godot 4 .NET project and a back
 ```
 
 The export command uses a separate Godot Mono process and remains possible after the original game exits. Inspect `reconstruction_report.json` before treating `scene.tscn` as complete: internal nodes, unsupported properties and cyclic Resources can prevent strict restoration. Script private fields, live threads, and deterministic time-travel are not captured.
+
+### Bounded runtime timeline sampling (source build)
+
+Only start a recording when the user explicitly requests observation. These sessions sample scene state at bounded intervals; they are **not** deterministic game replay or comprehensive signal/input traces.
+
+```sh
+"$CLI" godot-timeline-start --project "/absolute/path/to/game" --sample-every-frames 30 --max-samples 60
+"$CLI" godot-timeline-status --project "/absolute/path/to/game" --session-id SESSION_ID
+"$CLI" godot-timeline-stop --project "/absolute/path/to/game" --session-id SESSION_ID
+"$CLI" godot-timeline-sessions --project "/absolute/path/to/game"
+"$CLI" godot-timeline-info --project "/absolute/path/to/game" --session-id SESSION_ID
+"$CLI" godot-timeline-events --project "/absolute/path/to/game" --session-id SESSION_ID --offset 0 --limit 20
+```
+
+After the game exits, use event batches to locate interesting `toSnapshotId` frames and then run `godot-snapshot-export-tscn` on those snapshot IDs to inspect the native scene. Always mention dropped samples and avoid claiming that intermediate transient events were recorded.
 
 ### Explicit runtime modifications
 

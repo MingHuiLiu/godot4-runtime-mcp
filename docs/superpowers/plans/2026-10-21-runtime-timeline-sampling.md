@@ -17,3 +17,11 @@ Add explicitly opt-in and bounded periodic checkpoint capture while a Godot game
 ## Guardrails
 
 Snapshots capture observed node properties only (possibly expensive); stable identities through ConditionalWeakTable for the runtime process. Sampling cannot see intra-window events and does not hook arbitrary signals/input. Never mutate live nodes for capture/export. Reject traversal/symlink paths. `maxSamples` and `sampleEveryFrames` bounds; explicitly mark partial/dropped frames, completed vs stopped vs failed sessions. Keep v1 checkpoint and its 7 snapshot tools backward-compatible.
+
+## Evidence / implementation notes
+
+- T1 committed as `4a6abcf`: pure typed observable snapshot deltas, 75 .NET assertions.
+- T2 committed as `1463cb2`: checksum-verified append-only timeline sample archives, 81 assertions.
+- T3 committed as `1d7cde8`: opt-in runtime start/stop/status; actual Godot Headless 4-sample dynamic-node test; 83 assertions.
+- T4 committed as `035ffa3`: project-isolated offline MCP/CLI list, info and event queries; actual CLI after Godot quits; 89 assertions.
+- Follow-up: resource/diagnostic/group differences, source docs, security audit, Native AOT and package verification are addressed in task 5.
