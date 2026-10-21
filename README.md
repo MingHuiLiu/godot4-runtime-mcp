@@ -2,7 +2,7 @@
 
 **让 AI 直接检查和调试正在运行的 Godot 4 .NET 游戏。** 提供独立 `godot-runtime-cli`、标准 MCP Server 和可自行安装的 [Agent Skill](skills/godot-runtime/SKILL.md)。
 
-支持场景树、节点属性、方法调用、信号、日志、截图等 **51 项运行时操作**（含快照采集和时间线录制），另有 **13 项离线管理/查询工具**。CLI 和 MCP 共享官方 MCP C# SDK / 强类型接口，支持同一台机器上的多个 Godot 项目及进程。
+支持场景树、节点属性、方法调用、信号、日志、截图等 **51 项运行时操作**（含快照采集和时间线录制），另有 **14 项离线管理/查询工具**。CLI 和 MCP 共享官方 MCP C# SDK / 强类型接口，支持同一台机器上的多个 Godot 项目及进程。
 
 ## 交给 AI 安装（推荐）
 
@@ -50,7 +50,7 @@ godot-runtime-cli godot-snapshot-export-tscn --project /absolute/path/to/game --
 godot-runtime-cli godot-snapshot-export-status --project /absolute/path/to/game --job-id EXPORT_JOB_ID
 ```
 
-导出的文件包括 `scene.tscn`、`runtime_state.json`、`dependencies.json` 与 `reconstruction_report.json`。严格导出会比对重新加载的节点、属性和 Resource 引用，发现缺失则拒绝报告完整成功。外部 Resource 还会保留源文件 SHA-256、检查内存是否偏离磁盘，并在导出时验证文件未发生变化。Godot 原生 `.tscn` 不保证支持循环 Resource、任意 C# 私有变量、物理内部状态或确定性回放；连续时间轴录制是下一阶段工作。
+导出的文件包括 `scene.tscn`、`runtime_state.json`、`dependencies.json` 与 `reconstruction_report.json`。严格导出会比对重新加载的节点、属性和 Resource 引用，发现缺失则拒绝报告完整成功。外部 Resource 还会保留源文件 SHA-256、检查内存是否偏离磁盘，并在导出时验证文件未发生变化。Godot 原生 `.tscn` 不保证支持循环 Resource、任意 C# 私有变量、物理内部状态或确定性回放；不提供确定性回放。
 
 **发布说明：** 上述新功能目前属于源代码实施分支，不能假设 GitHub 上既有的 v3.1.0 发行包已包含它。使用前需构建含此功能的 CLI 并更新游戏插件。
 
@@ -71,6 +71,15 @@ godot-runtime-cli godot-timeline-events --project /absolute/path/to/game --sessi
 ```
 
 **选择性事件采集：** 原有的 `godot-timeline-start` 默认仅保存采样状态；另外指定 `--capture-signals true --capture-input true` 才会为该会话启用回调事件记录。输入事件仅保留按键码、按下状态与有限鼠标元数据，不保存 `Unicode`、IME 或输入文本；信号参数中的文本及资源对象会被标记为 `redacted`。现阶段自动连接的是 Godot 零参数信号，另外记录通过 MCP 工具成功发射的带参数信号；不支持宣称所有 C# 自定义带参数信号均被自动监听。每个样本至多保存 256 条回调事件，剩余部分会累计显示在 `droppedObservedEvents`。
+
+**可选截图与可视化时间线：** `godot-timeline-start` 的 `--capture-screenshots true` 只在显式开启时按采样点读取游戏 Viewport 的最近一帧（与该时刻状态可能相差一个渲染帧）。PNG 限制为最大边长 1024 像素、单张 512 KiB、单会话 32 MiB，并在磁盘上保持当前用户私有；每张都绑定 SHA-256。Headless 虚拟渲染器没有实际画面时会明确返回 `renderer_unavailable`，**不会生成伪造的空白截图**。录制结束后执行下方离线命令生成按帧排列截图、状态差异和回调的自包含 HTML，不包含脚本或联网依赖：
+
+```sh
+godot-runtime-cli godot-timeline-start --project /absolute/path/to/game --sample-every-frames 30 --max-samples 60 --capture-screenshots true
+godot-runtime-cli godot-timeline-export-gallery --project /absolute/path/to/game --session-id SESSION_ID --offset 0 --limit 20
+```
+
+该导出会把**已经核验过的截图嵌入 HTML 文件**，并返回本机 `htmlPath`，用户可以通过文件管理器或浏览器打开。HTML 内可能包含屏幕上的隐私内容；它只会在显式导出时生成，谨慎分享。单次画廊最多展示 20 个采样点，可改变 `offset` 生成其他页面。在无截图的会话中仍会展示完整的文本变化时间线。
 
 归档位于原项目对应的私有录制目录内。事件是**两个实际观察点之间的状态差异**，不等于所有中间瞬时发生的事件；因此这不是输入/信号全量追踪、逐帧视频，也不是确定性时间回放。若游戏变化快于采样或文件写入速度，可能漏掉中间状态，报告会保留丢失采样数量。可从时间线中的 Snapshot ID 再用离线场景导出工具恢复具体采样点的 `.tscn`。
 

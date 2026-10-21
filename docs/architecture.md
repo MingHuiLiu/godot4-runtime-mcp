@@ -28,7 +28,7 @@ Godot 4 .NET 游戏进程（每进程一个 Backend）
 
 宿主程序集在构建时嵌入 `addons/godot_mcp/tool_manifest.json` 和插件源码。`initialize`、`tools/list`、`godot_status`、`godot_list_projects`、`godot_list_instances`、`godot_setup_guide`、`godot_install_backend` 无须运行中的 Godot 游戏。离线快照查询、场景导出和状态检查直接访问本机持久归档，无须运行中的游戏；其余运行时操作必须查找实时实例并发起本机 HTTP 调用。
 
-`tool_manifest.json` 是 51 项运行时工具 Schema 的唯一源文件；`ToolService.cs` 再补充 13 项宿主管理与离线快照/时间线查询工具。CLI 由 System.CommandLine 2.0.11 提供参数解析，MCP stdio/HTTP 由官方 ModelContextProtocol.AspNetCore 2.2.0 提供协议和传输，HTTP 使用 ASP.NET Core/Kestrel。它们共用 `ToolService.RunAsync`。内部 `ToolDefinition`/`ToolInputSchema` 是强类型模型；只有向 Godot 发任意 Variant 参数时需要 JSON。
+`tool_manifest.json` 是 51 项运行时工具 Schema 的唯一源文件；`ToolService.cs` 再补充 14 项宿主管理与离线快照/时间线查询工具。CLI 由 System.CommandLine 2.0.11 提供参数解析，MCP stdio/HTTP 由官方 ModelContextProtocol.AspNetCore 2.2.0 提供协议和传输，HTTP 使用 ASP.NET Core/Kestrel。它们共用 `ToolService.RunAsync`。内部 `ToolDefinition`/`ToolInputSchema` 是强类型模型；只有向 Godot 发任意 Variant 参数时需要 JSON。
 
 ## 实例发现与路由
 
@@ -54,7 +54,7 @@ Godot 的 `GodotRuntimeTransport` 在线程池接收 JSON，认证后把 `tool`�
 
 `RuntimeHost/Recording/CheckpointStore.cs` 在游戏停止后提供私有目录校验、分页节点查询。`ExportJobManager` 在同一 Godot .NET 项目下启动新的 Headless 引擎进程，`SnapshotSceneBuilder` 将快照重建成隔离节点树，`ExportWorker` 调用原生 `PackedScene.Pack` / `ResourceSaver.Save`，`SnapshotSceneVerifier` 对重新加载后的树与资源图逐属性验证。严格失败时不得标为 `checkpoint_exact`。工作进程运行可信项目代码，不是安全沙箱；其他项目 Autoload 仍可能被启动。
 
-当前属于按需 Checkpoint MVP，**不具备连续时间轴/Delta 录制、视频录制或确定性 replay**。输出 `.tscn` 是可验证的原生场景资源，不是完整的进程内存快照。
+独立的 Checkpoint 是按需捕获；可选时间线实现了有界、按帧间隔的 Delta 观察及输入/信号事件记录，但仍**不具备连续视频录制或确定性 replay**。输出 `.tscn` 是可验证的原生场景资源，不是完整的进程内存快照。
 
 ### Snapshot codec 与依赖一致性（第二轮加固）
 
@@ -70,10 +70,16 @@ Checkpoint 的 v1 编码器支持 Godot 标量、StringName/NodePath、二维/�
 
 每段录制在 `recordings/<project-id>/<session-id>/timeline/` 存储状态和带 SHA-256 的有序 JSON 事件批次，并沿用同一会话里的原生 SceneCheckpoint。状态文件最后原子发布；离线 `TimelineStore` 通过项目路径和会话 ID 限制访问，提供分页及完整性校验。退出游戏后可以浏览既有样本及事件，但若进程异常终止，则状态可能仍为 `running`，不能把它解释为活跃进程。
 
-**录制不是确定性 replay：** 不包括输入原始序列、任意信号每次发射、GPU 视频帧、线程/物理引擎私有瞬时状态；采样间隔内产生又消失的节点不会被发现。后续功能若引入这些数据必须使用独立且可核验的录制通道，不得混淆观测差异和事件日志。
+**录制不是确定性 replay：** 不包括完整输入原始序列、任意信号每次发射、连续视频帧、线程/物理引擎私有瞬时状态；采样间隔内产生又消失的节点不会被发现。后续功能若引入这些数据必须使用独立且可核验的录制通道，不得混淆观测差异和事件日志。
 
 ### 可观察信号和输入事件通道
 
 仅当用户对某段录制显式开启 `captureSignals` 或 `captureInput` 时，`RuntimeTimelineController` 才接收原生回调并将其保存为 `TimelineBatch.ObservedEvents`。后台归档的同一批次包含 SHA-256 哈希，离线 `godot_timeline_events` 返回采样差异 `events` 和回调事件 `observedEvents` 两个独立集合。每批最多 256 条回调，超过限制累计 `droppedObservedEvents`；停止录制前会额外进行一次有限的终态采样以落盘尾部事件，如果已达到最大样本数，则明确统计无法写入的事件。信号录制仅限目标场景子树，输入不会阻止或改变引擎原有分发。
 
 回调范围：项目已有的全局监听器能自动观察**零参数**的 Godot Signal；通过 `emit_signal` MCP 操作成功触发的带参数信号也会被记录。并非通用 C# 参数信号钩子，也不覆盖每次脚本内部调用。输入来自插件 `_Input`，支持按键、鼠标按键/位移及手柄按钮的有限元数据；`Unicode`、IME 和文本均不持久化。Signal 参数中数值/布尔数值可以记录，字符串和 Resource 等敏感或复杂值均以 `redacted` 代替。录制默认关闭回调收集，需要用户显式设置 `captureSignals`/`captureInput`。这些数据属于可观察事件证据，不保证因果顺序或 deterministic replay。
+
+### 可选 Viewport 图像与离线画廊
+
+`RuntimeTimelineController` 仅在明确启用 `captureScreenshots` 时，尝试于 Godot 主线程读取 Viewport 的上一帧渲染图。随后裁切最大边长为 1024 像素并生成 PNG；只有不可变 `byte[]` 离开主线程，`Godot.Image` 和 Viewport 对象均保持在主线程。`TimelineArchive.WriteImageAsync` 在每段会话自己的 `timeline/frames/000000.png` 下原子写入 PNG（<=512 KiB、总量 <=32 MiB），写入 SHA-256 引用到 `TimelineBatch.Screenshot`，并最后发布已有的状态提交标志。`ReadPage` / `ReadImage` 验证文件名、路径/符号链接、哈希和尺寸；篡改帧会拒绝整页结果。Headless dummy renderer 没有 Viewport 读回图像，这种情况下明确写入 `unavailable(renderer_unavailable)` 和跳过计数，不伪造图片。单次 screenshot 采集不是视频流，也可能落后于相应场景快照一个渲染帧。
+
+`TimelineGalleryExporter` 在离线宿主进程中通过项目范围校验读取已提交的图像和状态差异，并显式导出上限为 20 个采样点的**单文件静态 HTML**。HTML 使用 `WebUtility.HtmlEncode` 编码非可信事件文本、禁止脚本和外部资源的 CSP，将验证过的 PNG 以内嵌 data URI 展示。生成的 HTML 按 0600 权限存储在用户私有时间线目录里；用户可打开或分享，但截图/事件内容可能含私密信息，因此默认不生成画廊。新增 `godot_timeline_export_gallery` 作为离线 CLI/MCP 操作，仅返回本地路径及计数，不直接通过 MCP 返回截图字节。对于无图形渲染器的自动化测试，使用“不可用”标识和合成 PNG 归档测试分别覆盖负向与正向管线；仍需在真实图形渲染环境人工检查渲染画面的视觉质量。

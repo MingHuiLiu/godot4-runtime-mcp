@@ -14,3 +14,19 @@ Base: `9922adf` (observed events), clean isolated worktree. Development only in 
 ## Limits and expectations
 
 Opt-in and user privacy: screenshots can contain private content, remain on-disk under per-user restricted folders; gallery embeds images only after explicit export. Native screenshots are renderer-dependent, including black/unavailable images in headless. Do not claim deterministic replay or a reliable video framerate. Individual cap <=512 KiB, 1024 px maximum dimension, total cap <=32 MiB/session; last samples record skipped/unavailable status. Existing capture APIs and backward-compatibility preserved. Do not automatically push, merge, or create a GitHub Release.
+
+## Evidence
+
+- Task 1 commit `3017444`: 103 assertions, private frame byte/hash/PNG validation, tamper + traversal rejections.
+- Task 2 commit `139717b`: optional Godot viewport sampling, explicit dummy-renderer fallback; end-to-end Headless 4 unavailable markers rather than fabricated images.
+- Task 3 commit `3987c3c`: escaped CSP-protected static HTML timeline, local MCP/CLI gallery export, integrity verification and offline CLI integration, 112 .NET assertions.
+- Task 4: documentation and final AOT and old `.tscn` regressions, no pushes or merges.
+
+## Final validation
+
+- `.NET`: 112/112 assertions including Native AOT SDK stdio and HTTP compatibility.
+- Real Godot Headless integration: original `.tscn` export and strict failure diagnostics; timeline with screenshot opt-in and four explicit `renderer_unavailable` samples; two consecutive offline gallery E2E passes.
+- PNG positive path: synthetic one-pixel PNG persisted, hashed, read and embedded in HTML; negative tamper, oversized frame, traversal, symlink defenses and HTML injection checks.
+- Native macOS ARM64: `publish-release.sh v3.1.0 osx-arm64` succeeded, local ZIP integrity and SHA256SUMS validated; native CLI exported same gallery after game exit, 112/112 assertions.
+- Limitation: graphical Viewport PNG image *quality and actual color* were not verified in GUI because the authorized test environment uses a dummy Headless renderer. Do not treat Headless black/unavailable frames as proof of GUI image fidelity.
+- No git push, merge, or GitHub Release.

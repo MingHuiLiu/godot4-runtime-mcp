@@ -17,7 +17,7 @@ compatibility: >-
 
 # Godot Runtime MCP
 
-Operate a **running Godot 4 .NET game**, not the Godot editor's static scene files. The current source build exposes 51 runtime tools and 13 offline management/snapshot/timeline tools via an MCP server and a standalone CLI. This skill is deliberately **self-contained**: assume no other file, script, repository checkout, SDK, or MCP configuration accompanies it.
+Operate a **running Godot 4 .NET game**, not the Godot editor's static scene files. The current source build exposes 51 runtime tools and 14 offline management/snapshot/timeline tools via an MCP server and a standalone CLI. This skill is deliberately **self-contained**: assume no other file, script, repository checkout, SDK, or MCP configuration accompanies it.
 
 ## Workflow
 
@@ -43,7 +43,7 @@ CLI=$(command -v godot-runtime-cli 2>/dev/null || true)
 
 If `version` fails, use [Standalone bootstrap](#standalone-bootstrap) only after diagnosing an absent or incompatible executable; do not silently overwrite an existing installation.
 
-The CLI accepts **direct kebab-case commands** for all tools (64 in this source build; older releases may differ). Options are generated from the embedded tool manifest; use `--help` to discover the actual parameters and required fields. You can also run `tools --json` for the complete schema.
+The CLI accepts **direct kebab-case commands** for all tools (65 in this source build; older releases may differ). Options are generated from the embedded tool manifest; use `--help` to discover the actual parameters and required fields. You can also run `tools --json` for the complete schema.
 
 ### Read-only inspection
 
@@ -87,9 +87,13 @@ Only start a recording when the user explicitly requests observation. These sess
 "$CLI" godot-timeline-sessions --project "/absolute/path/to/game"
 "$CLI" godot-timeline-info --project "/absolute/path/to/game" --session-id SESSION_ID
 "$CLI" godot-timeline-events --project "/absolute/path/to/game" --session-id SESSION_ID --offset 0 --limit 20
+# Private screenshots are a separate explicit opt-in:
+"$CLI" godot-timeline-start --project "/absolute/path/to/game" --sample-every-frames 30 --max-samples 60 --capture-screenshots true
+# Once samples exist, explicitly export a local static HTML preview:
+"$CLI" godot-timeline-export-gallery --project "/absolute/path/to/game" --session-id SESSION_ID --offset 0 --limit 20
 ```
 
-After the game exits, use event batches to locate interesting `toSnapshotId` frames and then run `godot-snapshot-export-tscn` on those snapshot IDs to inspect the native scene. Input and signal callbacks are opt-in. Only automatic zero-argument Godot signals and MCP-emitted parameter signals are integrated; arbitrary game-internal parameter signals may be missed. Never claim to recover typed passwords or arbitrary text: Unicode/IME and textual signal values are deliberately omitted or redacted. Report both `droppedSamples` and `droppedObservedEvents`. Always mention dropped samples and avoid claiming that intermediate transient events were recorded.
+After the game exits, use event batches to locate interesting `toSnapshotId` frames and then run `godot-snapshot-export-tscn` on those snapshot IDs to inspect the native scene. Input and signal callbacks are opt-in. Only automatic zero-argument Godot signals and MCP-emitted parameter signals are integrated; arbitrary game-internal parameter signals may be missed. Never claim to recover typed passwords or arbitrary text: Unicode/IME and textual signal values are deliberately omitted or redacted. Report `droppedSamples`, `droppedObservedEvents`, and skipped screenshot counts when capture is enabled. Exported HTML embeds potentially private screenshots; it is never safe to share without explicit permission. A Headless renderer normally has no real frames; do not present `renderer_unavailable` as a captured image. Always mention dropped samples and avoid claiming that intermediate transient events were recorded.
 
 ### Explicit runtime modifications
 
